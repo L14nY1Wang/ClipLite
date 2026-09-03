@@ -99,6 +99,8 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
             guard let self = self else { return }
             self.ocrPanel?.orderOut(nil)
             let panel = OCRResultPanel(); self.ocrPanel = panel
+            // 结果面板必须浮在整屏标注窗（.screenSaver）之上，否则会被盖住而“看不见”
+            panel.level = NSWindow.Level(rawValue: Int(self.window.level.rawValue) + 1)
             let g = NSRect(x: self.screen.frame.minX + self.canvas.selection.minX,
                            y: self.screen.frame.minY + self.canvas.selection.minY,
                            width: self.canvas.selection.width, height: self.canvas.selection.height)
