@@ -1,0 +1,17 @@
+# 构建产物
+.build/
+build/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Xcode 用户态
+xcuserdata/
+*.xcuserstate
+
+# ZCode 会话/本地数据
+.zcode/
+
+# 临时
+*.log
