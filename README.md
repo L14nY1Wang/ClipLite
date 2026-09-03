@@ -51,8 +51,11 @@ open build/ClipLite.app
 make selftest       # 命令行自测：截屏 → 裁剪 → /tmp/cliplite-selftest.png → 打印内存
 make grant          # 直接打开「录屏与系统录音」授权页
 make reset-perm     # 清除本 App 的屏幕录制授权记录（授权错乱时用）
+make dmg            # 构建可分发 DMG（有 Developer ID/公证凭证则自动签名+公证+装订）
 make clean
 ```
+
+发布、Developer ID 签名与公证、GitHub Actions 及 Homebrew tap 的完整流程见 [docs/RELEASE.md](docs/RELEASE.md)。
 
 ## 免「重复授权」（推荐，一次性）
 
