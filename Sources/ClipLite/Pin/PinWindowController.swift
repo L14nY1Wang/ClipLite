@@ -48,10 +48,6 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     // MARK: - 右键菜单动作
     @objc func close() { panel.close() }
     @objc func copyImage() { Clipboard.write(image: pinView.cgImage) }
-    @objc func setOpacity100() { panel.alphaValue = 1 }
-    @objc func setOpacity80() { panel.alphaValue = 0.8 }
-    @objc func setOpacity60() { panel.alphaValue = 0.6 }
-    @objc func setOpacity40() { panel.alphaValue = 0.4 }
     @objc func toggleShadow() {
         panel.hasShadow.toggle()
         panel.invalidateShadow()
@@ -68,23 +64,41 @@ final class PinWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    private var menuOpacitySlider: NSSlider?
+
     func showMenu(event: NSEvent) {
         let m = NSMenu()
         m.addItem(titled("识别文字", #selector(recognize)))
         m.addItem(titled("复制图片", #selector(copyImage)))
-        m.addItem(.separator())
         m.addItem(titled("关闭", #selector(close)))
         m.addItem(.separator())
-        let op = NSMenu(title: "不透明度")
-        op.addItem(titled("100%", #selector(setOpacity100)))
-        op.addItem(titled("80%", #selector(setOpacity80)))
-        op.addItem(titled("60%", #selector(setOpacity60)))
-        op.addItem(titled("40%", #selector(setOpacity40)))
-        let opItem = NSMenuItem(title: "不透明度", action: nil, keyEquivalent: "")
-        opItem.submenu = op
+
+        // 不透明度：菜单内嵌一个可拖动滑条（替代原来的 100/80/60/40 数字）
+        let rowH: CGFloat = 28, rowW: CGFloat = 240
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: rowW, height: rowH))
+        let label = NSTextField(labelWithString: "不透明度")
+        label.font = NSFont.systemFont(ofSize: 13)
+        label.frame = NSRect(x: 14, y: (rowH - 16) / 2, width: 66, height: 16)
+        container.addSubview(label)
+        let slider = NSSlider(frame: NSRect(x: 80, y: (rowH - 20) / 2, width: rowW - 96, height: 20))
+        slider.sliderType = .linear
+        slider.minValue = 0.2; slider.maxValue = 1.0
+        slider.doubleValue = Double(panel.alphaValue)
+        slider.isContinuous = true
+        slider.target = self
+        slider.action = #selector(opacityChanged(_:))
+        container.addSubview(slider)
+        menuOpacitySlider = slider
+        let opItem = NSMenuItem()
+        opItem.view = container
         m.addItem(opItem)
+
         m.addItem(titled("阴影", #selector(toggleShadow)))
         NSMenu.popUpContextMenu(m, with: event, for: pinView)
+    }
+
+    @objc private func opacityChanged(_ s: NSSlider) {
+        panel.alphaValue = CGFloat(s.doubleValue)
     }
 
     private func titled(_ title: String, _ action: Selector) -> NSMenuItem {

@@ -1,8 +1,7 @@
 import AppKit
 
-/// 贴图内容视图。自己处理移动 / 缩放 / 透明度，避免非激活无边框面板收不到滚轮的问题。
-/// - 拖主体 = 移动窗口；拖右下角手柄 = 缩放；双击 = 关闭；滚轮 = 缩放（辅助）
-/// - 鼠标悬停顶部出现「透明度」拖动条。
+/// 贴图内容视图。拖主体移动、拖右下角手柄按比例缩放、双击关闭、滚轮缩放（辅助）。
+/// 透明度改由右键菜单内的滑条控制（不再叠在图片上）。
 final class PinView: NSView {
     let cgImage: CGImage
     let baseSize: NSSize
@@ -11,56 +10,20 @@ final class PinView: NSView {
 
     private enum Mode { case idle, move, resize }
     private var mode: Mode = .idle
-    private var grabOffset = NSPoint.zero        // 移动：窗口原点相对鼠标的偏移
+    private var grabOffset = NSPoint.zero
     private var startFrame = NSRect.zero
     private let grip: CGFloat = 18
-
-    private let opacitySlider = NSSlider()
-    private var sliderVisible = false
 
     init(image: CGImage, baseSize: NSSize) {
         self.cgImage = image
         self.baseSize = baseSize
         super.init(frame: NSRect(origin: .zero, size: baseSize))
-
-        opacitySlider.sliderType = .linear
-        opacitySlider.minValue = 0.2
-        opacitySlider.maxValue = 1.0
-        opacitySlider.doubleValue = 1.0
-        opacitySlider.target = self
-        opacitySlider.action = #selector(opacityChanged(_:))
-        opacitySlider.isContinuous = true
-        opacitySlider.controlSize = .mini
-        opacitySlider.isHidden = true
-        addSubview(opacitySlider)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { false }
-    // 关闭系统背景拖动，改由本视图处理移动
     override var mouseDownCanMoveWindow: Bool { false }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
-    }
-    override func mouseEntered(with event: NSEvent) { setSlider(true) }
-    override func mouseExited(with event: NSEvent)  { setSlider(false) }
-
-    private func setSlider(_ visible: Bool) {
-        guard visible != sliderVisible else { return }
-        sliderVisible = visible
-        layoutSlider()
-        opacitySlider.isHidden = !visible
-    }
-    private func layoutSlider() {
-        let w = min(bounds.width - 12, 130)
-        opacitySlider.frame = NSRect(x: 6, y: bounds.maxY - 22, width: w, height: 18)
-    }
-    @objc private func opacityChanged(_ s: NSSlider) { window?.alphaValue = CGFloat(s.doubleValue) }
 
     // MARK: - 绘制
     override func draw(_ dirtyRect: NSRect) {
@@ -91,8 +54,7 @@ final class PinView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         guard let w = window else { return }
         if gripRect().insetBy(dx: -6, dy: -6).contains(p) {
-            mode = .resize
-            startFrame = w.frame
+            mode = .resize; startFrame = w.frame
         } else {
             mode = .move
             grabOffset = NSPoint(x: w.frame.origin.x - NSEvent.mouseLocation.x,
@@ -107,14 +69,17 @@ final class PinView: NSView {
             let loc = NSEvent.mouseLocation
             w.setFrameOrigin(NSPoint(x: loc.x + grabOffset.x, y: loc.y + grabOffset.y))
         case .resize:
-            // 拖右下角手柄：固定左上角，改变宽高（非翻转，y 向上）
             var f = startFrame
-            let mouseGlobal = NSEvent.mouseLocation
-            let width = max(30, mouseGlobal.x - f.minX)
-            let height = max(30, f.maxY - mouseGlobal.y)
-            f.size = NSSize(width: width, height: height)
+            let aspect = startFrame.width / max(1, startFrame.height)
+            let m = NSEvent.mouseLocation
+            let wantW = max(30, m.x - f.minX)
+            let wantH = max(30, f.maxY - m.y)
+            if wantW / aspect >= wantH {
+                f.size = NSSize(width: wantW, height: wantW / aspect)
+            } else {
+                f.size = NSSize(width: wantH * aspect, height: wantH)
+            }
             w.setFrame(f, display: true, animate: false)
-            layoutSlider()
             needsDisplay = true
         case .idle: break
         }

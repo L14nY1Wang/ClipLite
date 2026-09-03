@@ -4,6 +4,15 @@ enum AnnotationTool {
     case rect, ellipse, arrow, pen, text, mosaic, number
 }
 
+extension AnnotationTool {
+    /// 是否有“大小/宽度”可调节（决定选中时是否弹出大小条）
+    var isSizeAdjustable: Bool {
+        switch self {
+        case .rect, .ellipse, .arrow, .pen, .text, .number, .mosaic: return true
+        }
+    }
+}
+
 /// 标注元素。坐标存视图点坐标；draw 统一走 CGContext，scale=1 为画布实时绘制，
 /// scale=像素比 用于最终合成渲染，两条路径完全一致。
 struct AnnotationItem {

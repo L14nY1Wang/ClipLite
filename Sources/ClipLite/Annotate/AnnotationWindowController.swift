@@ -5,6 +5,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
     let window: SelectionWindow
     let canvas: AnnotationCanvas
     let toolbar: AnnotationToolbar
+    let sizeBar: AnnotationSizeBar
     let screen: NSScreen
     weak var coordinator: AppCoordinator?
     private var ocrPanel: OCRResultPanel?
@@ -14,6 +15,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         self.canvas = AnnotationCanvas(fullImage: fullImage, screen: screen, initialSelection: initialSelection)
         self.window = SelectionWindow(frame: screen.frame)
         self.toolbar = AnnotationToolbar()
+        self.sizeBar = AnnotationSizeBar()
         super.init()
 
         canvas.windowController = self
@@ -22,24 +24,38 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.level = .screenSaver   // 完全置顶，覆盖整屏
 
-        toolbar.onSelectTool = { [weak self] tool in self?.canvas.currentTool = tool }
+        toolbar.onSelectTool = { [weak self] tool in
+            guard let self = self else { return }
+            self.canvas.currentTool = tool
+            self.setShowSizeBar(tool.isSizeAdjustable)   // 仅可缩放工具出现大小条
+        }
         toolbar.onColor = { [weak self] color in self?.canvas.currentColor = color }
-        toolbar.onSize = { [weak self] s in self?.canvas.sizeScale = s }
         toolbar.onAction = { [weak self] action in self?.handle(action) }
+
+        sizeBar.onSize = { [weak self] s in self?.canvas.sizeScale = s }
     }
 
     func show() {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(canvas)
-        // 工具条必须浮在整屏标注窗之上，否则会被 .screenSaver 层覆盖而“消失”
-        toolbar.level = NSWindow.Level(rawValue: Int(window.level.rawValue) + 1)
+        // 工具条/大小条必须浮在整屏标注窗之上，否则会被 .screenSaver 层覆盖
+        let above = NSWindow.Level(rawValue: Int(window.level.rawValue) + 1)
+        toolbar.level = above
+        sizeBar.level = above
+        setShowSizeBar(canvas.currentTool.isSizeAdjustable)
         repositionToolbar()
         toolbar.orderFrontRegardless()
         toolbar.highlightDefaultTool()
     }
 
+    private func setShowSizeBar(_ show: Bool) {
+        if show { sizeBar.orderFrontRegardless() } else { sizeBar.orderOut(nil) }
+        repositionToolbar()
+    }
+
     func windowWillClose(_ notification: Notification) {
         toolbar.orderOut(nil)
+        sizeBar.orderOut(nil)
         ocrPanel?.orderOut(nil)
         coordinator?.annotationDidClose()
     }
@@ -49,12 +65,26 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
                                y: screen.frame.minY + canvas.selection.minY,
                                width: canvas.selection.width, height: canvas.selection.height)
         let tb = toolbar.frame.size
-        var origin = NSPoint(x: selGlobal.maxX - tb.width, y: selGlobal.minY - tb.height - 8)
+        let sb = sizeBar.frame.size
+        let gap: CGFloat = 8
+        // 工具条放选区下方；大小条再往下叠。若下方放不下，整体翻到上方（大小条在最上）。
+        var toolbarOrigin = NSPoint(x: selGlobal.maxX - tb.width, y: selGlobal.minY - tb.height - gap)
         let sf = screen.frame
-        if origin.y < sf.minY { origin.y = selGlobal.maxY + 8 }      // 下方放不下 → 放上方
-        origin.x = min(max(origin.x, sf.minX + 4), sf.maxX - tb.width - 4)
-        origin.y = min(max(origin.y, sf.minY + 4), sf.maxY - tb.height - 4)
-        toolbar.setFrameOrigin(origin)
+        let stackH = tb.height + (sizeBar.isVisible ? sb.height + gap : 0)
+        var below = selGlobal.minY - stackH - gap
+        let placeAbove = below < sf.minY
+        if placeAbove { toolbarOrigin.y = selGlobal.maxY + gap }
+        toolbarOrigin.x = min(max(toolbarOrigin.x, sf.minX + 4), sf.maxX - tb.width - 4)
+        toolbarOrigin.y = min(max(toolbarOrigin.y, sf.minY + 4), sf.maxY - tb.height - 4)
+        toolbar.setFrameOrigin(toolbarOrigin)
+
+        if sizeBar.isVisible {
+            let sx = toolbarOrigin.x + (tb.width - sb.width) / 2
+            let tbTop = toolbarOrigin.y + tb.height
+            let sy = placeAbove ? tbTop + gap : toolbarOrigin.y - sb.height - gap
+            sizeBar.setFrameOrigin(NSPoint(x: min(max(sx, sf.minX + 4), sf.maxX - sb.width - 4),
+                                           y: min(max(sy, sf.minY + 4), sf.maxY - sb.height - 4)))
+        }
     }
 
     private func handle(_ action: ToolbarAction) {
