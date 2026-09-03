@@ -72,19 +72,25 @@ jobs:
           git clone "https://x-access-token:${TAP_PAT}@github.com/${{ github.repository_owner }}/homebrew-cliplite.git" tap
           cat > tap/Casks/cliplite.rb <<EOF
           cask "cliplite" do
+            arch arm: "arm64"
+
             version "${VER}"
-            sha256 "${SHA}"
+            sha256 arm: "${SHA}"
+
             url "https://github.com/${{ github.repository_owner }}/ClipLite/releases/download/v#{version}/ClipLite-#{version}.dmg"
             name "ClipLite"
             desc "极低内存的 macOS 截图 / 贴图 / 标注 / OCR 工具"
             homepage "https://github.com/${{ github.repository_owner }}/ClipLite"
 
+            depends_on macos: :sonoma
+
             livecheck do
-              url :latest
+              url "https://github.com/${{ github.repository_owner }}/ClipLite"
               strategy :github_latest
             end
 
             app "ClipLite.app"
+
             zap trash: "~/Library/Preferences/com.lianyi.cliplite.plist"
           end
           EOF
