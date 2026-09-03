@@ -24,6 +24,7 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     let panel: PinPanel
     let pinView: PinView
     var onClose: (() -> Void)?
+    private var ocrPanel: OCRResultPanel?
 
     init(image: CGImage, frame: NSRect) {
         var f = frame
@@ -56,10 +57,23 @@ final class PinWindowController: NSObject, NSWindowDelegate {
         panel.invalidateShadow()
     }
 
+    /// 对整张贴图做离线 OCR，结果停靠面板显示。
+    @objc func recognize() {
+        if ocrPanel == nil { ocrPanel = OCRResultPanel() }
+        let img = pinView.cgImage
+        VisionOCR.recognize(img) { [weak self] text in
+            guard let self = self else { return }
+            let above = NSWindow.Level(rawValue: Int(self.panel.level.rawValue) + 1)
+            self.ocrPanel?.show(text: text, below: self.panel.frame, level: above)
+        }
+    }
+
     func showMenu(event: NSEvent) {
         let m = NSMenu()
-        m.addItem(titled("关闭", #selector(close)))
+        m.addItem(titled("识别文字", #selector(recognize)))
         m.addItem(titled("复制图片", #selector(copyImage)))
+        m.addItem(.separator())
+        m.addItem(titled("关闭", #selector(close)))
         m.addItem(.separator())
         let op = NSMenu(title: "不透明度")
         op.addItem(titled("100%", #selector(setOpacity100)))

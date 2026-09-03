@@ -4,6 +4,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let coordinator = AppCoordinator()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 单实例保护：同一 bundle 已有其它进程在跑，则激活它并退出，避免多个截图热键实例互相串扰
+        let myID = Bundle.main.bundleIdentifier ?? ""
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        if let other = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == myID && $0.processIdentifier != myPID
+        }) {
+            other.activate(options: [])
+            NSLog("ClipLite: 检测到已运行实例 pid=\(other.processIdentifier)，当前实例退出")
+            NSApp.terminate(nil)
+            return
+        }
         coordinator.start()
     }
 }

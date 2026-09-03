@@ -97,14 +97,14 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         guard let img = canvas.renderFinal() else { return }
         VisionOCR.recognize(img) { [weak self] text in
             guard let self = self else { return }
-            self.ocrPanel?.orderOut(nil)
-            let panel = OCRResultPanel(); self.ocrPanel = panel
-            // 结果面板必须浮在整屏标注窗（.screenSaver）之上，否则会被盖住而“看不见”
-            panel.level = NSWindow.Level(rawValue: Int(self.window.level.rawValue) + 1)
+            if self.ocrPanel == nil { self.ocrPanel = OCRResultPanel() }
+            // 蓝框的全局坐标
             let g = NSRect(x: self.screen.frame.minX + self.canvas.selection.minX,
                            y: self.screen.frame.minY + self.canvas.selection.minY,
                            width: self.canvas.selection.width, height: self.canvas.selection.height)
-            panel.show(text: text, near: g)
+            // 面板浮在整屏标注窗之上，并停靠蓝框下方
+            let above = NSWindow.Level(rawValue: Int(self.window.level.rawValue) + 1)
+            self.ocrPanel?.show(text: text, below: g, level: above)
         }
     }
 }
