@@ -9,10 +9,12 @@ final class AnnotationToolbar: NSPanel {
     var onSelectTool: ((AnnotationTool) -> Void)?
     var onAction: ((ToolbarAction) -> Void)?
     var onColor: ((NSColor) -> Void)?
+    var onSize: ((CGFloat) -> Void)?      // 大小/宽度拖动条：sizeScale 0.5…3
 
     private var toolButtons: [NSButton: AnnotationTool] = [:]
     private var actionButtons: [NSButton: ToolbarAction] = [:]
     private var colorButtons: [NSButton: NSColor] = [:]
+    private var sizeSlider: NSSlider?
 
     private let palette: [(String, NSColor)] = [
         ("systemRed", NSColor(red: 1.0, green: 0.23, blue: 0.19, alpha: 1)),
@@ -70,6 +72,20 @@ final class AnnotationToolbar: NSPanel {
         }
         stack.addArrangedSubview(separator())
 
+        // 大小/宽度拖动条（滑块）
+        let sizeIcon = symbolButton("circle", "标记大小", tag: 1)
+        sizeIcon.isEnabled = false
+        stack.addArrangedSubview(sizeIcon)
+        let slider = NSSlider(frame: NSRect(x: 0, y: 0, width: 96, height: 20))
+        slider.minValue = 0.5; slider.maxValue = 3.0; slider.doubleValue = 1.0
+        slider.target = self; slider.action = #selector(sizeChanged(_:))
+        slider.isContinuous = true
+        slider.controlSize = .small
+        slider.toolTip = "拖动调整标记大小 / 线宽"
+        stack.addArrangedSubview(slider)
+        sizeSlider = slider
+        stack.addArrangedSubview(separator())
+
         let actions: [(ToolbarAction, String, String)] = [
             (.undo, "arrow.uturn.backward", "撤销"),
             (.ocr, "doc.text.viewfinder", "OCR 文字识别"),
@@ -124,6 +140,10 @@ final class AnnotationToolbar: NSPanel {
             return true
         }
         return img
+    }
+
+    @objc private func sizeChanged(_ sender: NSSlider) {
+        onSize?(CGFloat(sender.doubleValue))
     }
 
     @objc private func clicked(_ sender: NSButton) {

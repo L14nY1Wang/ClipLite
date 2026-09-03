@@ -24,6 +24,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
 
         toolbar.onSelectTool = { [weak self] tool in self?.canvas.currentTool = tool }
         toolbar.onColor = { [weak self] color in self?.canvas.currentColor = color }
+        toolbar.onSize = { [weak self] s in self?.canvas.sizeScale = s }
         toolbar.onAction = { [weak self] action in self?.handle(action) }
     }
 

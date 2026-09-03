@@ -15,6 +15,7 @@ struct AnnotationItem {
     var text: String = ""
     var fontSize: CGFloat = 18
     var number: Int = 0            // .number 序号标记：rect.origin 为圆心（点坐标）
+    var badgeRadius: CGFloat = 15  // .number 圆半径（点）
     var mosaicSource: CGImage? // 预生成的低分辨率小图，放大绘制即马赛克
 
     func draw(in ctx: CGContext, scale: CGFloat) {
@@ -83,7 +84,7 @@ struct AnnotationItem {
             ctx.draw(src, in: rect.applying(CGAffineTransform(scaleX: scale, y: scale)))
 
         case .number:
-            let R: CGFloat = 15 * scale                     // 圆半径（点）× 缩放
+            let R: CGFloat = badgeRadius * scale            // 圆半径（点）× 缩放
             let cx = rect.origin.x * scale, cy = rect.origin.y * scale
             ctx.setFillColor(color.cgColor)
             ctx.fillEllipse(in: CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2))

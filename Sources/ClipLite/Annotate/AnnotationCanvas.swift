@@ -10,7 +10,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     var items: [AnnotationItem] = []
     var currentTool: AnnotationTool = .rect
     var currentColor: NSColor = NSColor(red: 1.0, green: 0.23, blue: 0.19, alpha: 1)
-    private(set) var lineWidth: CGFloat = 3
+    var sizeScale: CGFloat = 1 { didSet { needsDisplay = true } }   // 拖动条：整体缩放线宽/字号/序号圆
+    var lineWidth: CGFloat { 3 * sizeScale }
+    var textFontSize: CGFloat { 18 * sizeScale }
+    var badgeRadius: CGFloat { 15 * sizeScale }
     var onSelectionChanged: (() -> Void)?
     weak var windowController: AnnotationWindowController?
 
@@ -62,7 +65,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             if currentTool == .text { beginText(at: p); return }
             if currentTool == .number {
                 items.append(AnnotationItem(kind: .number, color: currentColor, lineWidth: lineWidth,
-                                            rect: NSRect(origin: p, size: .zero), number: nextNumber))
+                                            rect: NSRect(origin: p, size: .zero),
+                                            number: nextNumber, badgeRadius: badgeRadius))
                 nextNumber += 1
                 needsDisplay = true; return
             }
@@ -183,9 +187,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: - 文字
     private func beginText(at p: NSPoint) {
         guard textEditor == nil else { return }
-        let editor = NSTextField(frame: NSRect(x: p.x, y: p.y - 24, width: 220, height: 24))
+        let fs = textFontSize
+        let editor = NSTextField(frame: NSRect(x: p.x, y: p.y - fs * 1.4, width: max(160, fs * 12), height: fs * 1.4))
         editor.isBordered = false; editor.drawsBackground = false; editor.focusRingType = .none
-        editor.font = NSFont.systemFont(ofSize: 18); editor.textColor = currentColor
+        editor.font = NSFont.systemFont(ofSize: fs); editor.textColor = currentColor
         editor.delegate = self
         addSubview(editor); textEditor = editor
         window?.makeFirstResponder(editor)
@@ -198,7 +203,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         editor.removeFromSuperview(); textEditor = nil
         if !str.isEmpty {
             items.append(AnnotationItem(kind: .text, color: currentColor, lineWidth: lineWidth,
-                                        rect: NSRect(origin: origin, size: .zero), text: str, fontSize: 18))
+                                        rect: NSRect(origin: origin, size: .zero),
+                                        text: str, fontSize: textFontSize))
         }
         window?.makeFirstResponder(self); needsDisplay = true
     }
