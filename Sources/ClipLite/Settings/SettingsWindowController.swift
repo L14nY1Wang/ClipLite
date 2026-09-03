@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 /// 设置窗口：自定义截图 / 贴图热键，开机自启。分组卡片 + 键帽式按钮。
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     enum Kind { case screenshot, pin }
 
     private weak var coordinator: AppCoordinator?
@@ -19,6 +19,7 @@ final class SettingsWindowController: NSWindowController {
         w.isReleasedWhenClosed = false
         w.center()
         super.init(window: w)
+        w.delegate = self
         buildUI()
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -77,14 +78,14 @@ final class SettingsWindowController: NSWindowController {
         let genCard = makeCard("通用")
         let launchRow = NSStackView()
         launchRow.orientation = .horizontal
+        launchRow.spacing = 8
         let launchLabel = NSTextField(labelWithString: "开机时自动启动")
-        launchLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        launchLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
         launchSwitch.target = self
         launchSwitch.action = #selector(toggleLaunch(_:))
+        genCard.content.addArrangedSubview(launchRow)   // 先入树，再取子视图
         launchRow.addArrangedSubview(launchLabel)
         launchRow.addArrangedSubview(launchSwitch)
-        launchRow.widthAnchor.constraint(equalTo: genCard.content.widthAnchor).isActive = true
-        genCard.content.addArrangedSubview(launchRow)
         root.addArrangedSubview(genCard.box)
 
         // 提示
@@ -212,10 +213,21 @@ final class SettingsWindowController: NSWindowController {
         refreshTitles()
     }
 
+    func windowWillClose(_ notification: Notification) {
+        window?.level = .normal
+        // 关设置后回到“仅菜单栏常驻”
+        NSApp.setActivationPolicy(.accessory)
+    }
+
     func showAndActivate() {
         refreshTitles()
+        // accessory 应用从后台弹普通窗口会被压住看不见：临时转普通策略 + 激活 + 强制前置
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        window?.level = .floating
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
+        window?.center()
     }
 }

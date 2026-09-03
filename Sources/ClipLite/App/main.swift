@@ -6,12 +6,18 @@ if CommandLine.arguments.contains("--selftest") {
     exit(0)
 }
 
-// 自动化触发：向运行中的实例发通知开始截图（无需任何系统权限）
-if CommandLine.arguments.contains("--trigger-capture") {
+// 自动化触发：向运行中的实例发通知执行动作（capture / pin / settings）。无需任何系统权限。
+let args = CommandLine.arguments
+if let i = args.firstIndex(of: "--trigger"), i + 1 < args.count {
+    DistributedNotificationCenter.default().post(name: .init("com.lianyi.cliplite.trigger"),
+                                                  object: nil, userInfo: ["action": args[i + 1]])
+    Thread.sleep(forTimeInterval: 0.6)   // 让异步 post 有机会投递给常驻实例
+    exit(0)
+}
+if args.contains("--trigger-capture") {
     DistributedNotificationCenter.default().post(name: .init("com.lianyi.cliplite.trigger"),
                                                   object: nil, userInfo: ["action": "capture"])
-    // post 是异步的，发进程需存活片刻，否则消息可能来不及投递给常驻实例
-    Thread.sleep(forTimeInterval: 0.5)
+    Thread.sleep(forTimeInterval: 0.6)
     exit(0)
 }
 

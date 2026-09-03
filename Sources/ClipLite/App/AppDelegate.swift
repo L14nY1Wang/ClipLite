@@ -46,6 +46,11 @@ final class AppCoordinator: NSObject {
                                                             selector: #selector(onTrigger(_:)),
                                                             name: .init("com.lianyi.cliplite.trigger"),
                                                             object: nil)
+
+        // 调试：启动即打开设置窗（`open ClipLite.app --args --open-settings`）
+        if CommandLine.arguments.contains("--open-settings") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.showSettings() }
+        }
     }
 
     /// 依据当前设置注册全局热键（截图 / 贴图），改键后重新调用即可热更新。
@@ -67,6 +72,7 @@ final class AppCoordinator: NSObject {
             switch action {
             case "capture": self.startCapture()
             case "pin": self.pinClipboard()
+            case "settings": self.showSettings()
             default: break
             }
         }
