@@ -1,0 +1,95 @@
+name: Release
+
+# 触发：推送形如 v0.1.0 的 tag（或手动 workflow_dispatch 指定版本）。
+# 流程：macOS runner 构建 .app → 打包 DMG → 创建 GitHub Release → 自动更新 Homebrew tap。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，不含 v，如 0.1.1"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if release already exists
+        id: skip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "已存在 Release ${{ steps.ver.outputs.tag }}，跳过（保护手动引导/已发布版本）"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build DMG
+        if: steps.skip.outputs.exists == 'false'
+        run: |
+          bash scripts/build-dmg.sh
+          echo "DMG=$(ls dist/*.dmg | head -1)" >> "$GITHUB_ENV"
+          echo "SHA=$(shasum -a 256 dist/*.dmg | awk '{print $1}')" >> "$GITHUB_ENV"
+          echo "VER=${TAG#v}" >> "$GITHUB_ENV"
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+
+      - name: Create GitHub Release
+        if: steps.skip.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          files: ${{ env.DMG }}
+          generate_release_notes: true
+          body: |
+            下载 `ClipLite-${{ env.VER }}.dmg`，sha256：`${{ env.SHA }}`
+
+      - name: Update Homebrew tap
+        if: steps.skip.outputs.exists == 'false' && env.TAP_PAT != ''
+        env:
+          TAP_PAT: ${{ secrets.TAP_PAT }}
+          VER: ${{ env.VER }}
+          SHA: ${{ env.SHA }}
+        run: |
+          git clone "https://x-access-token:${TAP_PAT}@github.com/${{ github.repository_owner }}/homebrew-cliplite.git" tap
+          cat > tap/Casks/cliplite.rb <<EOF
+          cask "cliplite" do
+            version "${VER}"
+            sha256 "${SHA}"
+            url "https://github.com/${{ github.repository_owner }}/ClipLite/releases/download/v#{version}/ClipLite-#{version}.dmg"
+            name "ClipLite"
+            desc "极低内存的 macOS 截图 / 贴图 / 标注 / OCR 工具"
+            homepage "https://github.com/${{ github.repository_owner }}/ClipLite"
+
+            livecheck do
+              url :latest
+              strategy :github_latest
+            end
+
+            app "ClipLite.app"
+            zap trash: "~/Library/Preferences/com.lianyi.cliplite.plist"
+          end
+          EOF
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/cliplite.rb
+          git commit -m "cliplite ${VER}" && git push

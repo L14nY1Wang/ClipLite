@@ -13,5 +13,9 @@ xcuserdata/
 # ZCode 会话/本地数据
 .zcode/
 
+# 发布产物
+dist/
+*.dmg
+
 # 临时
 *.log

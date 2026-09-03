@@ -2,7 +2,24 @@
 
 > 一款追求**极低内存占用**的 macOS 截图 / 贴图 / 标注 / OCR 小工具。
 
-用 **纯 Swift + AppKit、零第三方依赖**从零实现。空闲物理内存约 **10MB**（实测 footprint ~9–11MB），而功能覆盖截图、贴图、标注、离线 OCR。
+用 **纯 Swift + AppKit、零第三方依赖**从零实现。空闲物理内存约 **10.8MB**，功能覆盖截图、贴图、标注、离线 OCR。
+
+## 安装
+
+**Homebrew（推荐）**
+
+```bash
+brew tap L14nY1Wang/cliplite
+brew install --cask cliplite
+```
+
+**下载 DMG**
+
+到 [Releases](https://github.com/L14nY1Wang/ClipLite/releases) 下载 `ClipLite-<版本>.dmg`，打开后把 ClipLite 拖进 Applications。
+
+> 本版本为个人自签名、未做 Apple 公证。首次打开若被 Gatekeeper 拦截：在 App 上**右键 → 打开**，或在「终端」执行 `xattr -dr com.apple.quarantine /Applications/ClipLite.app`。
+
+**从源码构建**见下方「构建与运行」。
 
 ## 功能
 

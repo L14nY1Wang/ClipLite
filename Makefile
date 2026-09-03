@@ -3,7 +3,7 @@ BINARY   := .build/release/ClipLite
 PLIST    := Resources/Info.plist
 BUNDLE_ID := com.lianyi.cliplite
 
-.PHONY: all build app run clean selftest sign
+.PHONY: all build app run clean selftest sign dmg
 
 all: app
 
@@ -35,6 +35,10 @@ grant:
 reset-perm:
 	@tccutil reset ScreenCapture "$(BUNDLE_ID)" 2>/dev/null || true
 	@echo "已清除 $(BUNDLE_ID) 的屏幕录制授权记录，请重启 ClipLite 后按提示重新授权"
+
+# 构建可分发 DMG（dist/ClipLite-<ver>.dmg）并打印 sha256
+dmg:
+	@bash scripts/build-dmg.sh
 
 # 端到端自测：截屏 → 裁剪中心 300x150 → 写 PNG 到 /tmp → 打印内存
 selftest: app
