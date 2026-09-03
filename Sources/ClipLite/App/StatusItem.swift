@@ -21,6 +21,7 @@ final class StatusBarController {
         menu.addItem(item("截图  \(label(for: s.screenshotHotKey))", #selector(AppCoordinator.startCapture)))
         menu.addItem(item("贴图：剪贴板  \(label(for: s.pinClipboardHotKey))", #selector(AppCoordinator.pinClipboard)))
         menu.addItem(.separator())
+        menu.addItem(item("设置…", #selector(AppCoordinator.showSettings)))
         menu.addItem(item("屏幕录制权限…", #selector(AppCoordinator.openScreenCapturePrefs)))
         menu.addItem(item("重启应用", #selector(AppCoordinator.relaunch)))
         menu.addItem(.separator())

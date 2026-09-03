@@ -28,6 +28,7 @@ final class AppCoordinator: NSObject {
     private var selection: SelectionController?
     private var annotation: AnnotationWindowController?
     private let pinController = PinController()
+    private lazy var settingsWC = SettingsWindowController(coordinator: self)
 
     func start() {
         statusItem.coordinator = self
@@ -38,6 +39,17 @@ final class AppCoordinator: NSObject {
             _ = ScreenCapture.request()
         }
 
+        applyHotKeys()
+
+        // 自动化接口：`ClipLite --trigger-capture`（供脚本/测试调用）
+        DistributedNotificationCenter.default().addObserver(self,
+                                                            selector: #selector(onTrigger(_:)),
+                                                            name: .init("com.lianyi.cliplite.trigger"),
+                                                            object: nil)
+    }
+
+    /// 依据当前设置注册全局热键（截图 / 贴图），改键后重新调用即可热更新。
+    func applyHotKeys() {
         let s = settings.screenshotHotKey
         hotKeys.register(id: 1, keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
             self?.startCapture()
@@ -46,12 +58,6 @@ final class AppCoordinator: NSObject {
         hotKeys.register(id: 2, keyCode: p.keyCode, modifiers: p.modifiers) { [weak self] in
             self?.pinClipboard()
         }
-
-        // 自动化接口：`ClipLite --trigger-capture`（供脚本/测试调用）
-        DistributedNotificationCenter.default().addObserver(self,
-                                                            selector: #selector(onTrigger(_:)),
-                                                            name: .init("com.lianyi.cliplite.trigger"),
-                                                            object: nil)
     }
 
     @objc private func onTrigger(_ note: Notification) {
@@ -111,6 +117,10 @@ final class AppCoordinator: NSObject {
     }
 
     // MARK: - 菜单动作
+    @objc func showSettings() {
+        settingsWC.showAndActivate()
+    }
+
     @objc func openScreenCapturePrefs() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)

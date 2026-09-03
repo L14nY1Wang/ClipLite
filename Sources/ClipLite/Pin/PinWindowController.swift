@@ -73,14 +73,14 @@ final class PinWindowController: NSObject, NSWindowDelegate {
         m.addItem(titled("关闭", #selector(close)))
         m.addItem(.separator())
 
-        // 不透明度：菜单内嵌一个可拖动滑条（替代原来的 100/80/60/40 数字）
-        let rowH: CGFloat = 28, rowW: CGFloat = 240
+        // 不透明度：标题单独一行，滑条换到下一行，菜单更窄
+        let header = NSMenuItem(title: "不透明度", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        m.addItem(header)
+
+        let rowH: CGFloat = 26, rowW: CGFloat = 150
         let container = NSView(frame: NSRect(x: 0, y: 0, width: rowW, height: rowH))
-        let label = NSTextField(labelWithString: "不透明度")
-        label.font = NSFont.systemFont(ofSize: 13)
-        label.frame = NSRect(x: 14, y: (rowH - 16) / 2, width: 66, height: 16)
-        container.addSubview(label)
-        let slider = NSSlider(frame: NSRect(x: 80, y: (rowH - 20) / 2, width: rowW - 96, height: 20))
+        let slider = NSSlider(frame: NSRect(x: 10, y: (rowH - 18) / 2, width: rowW - 20, height: 18))
         slider.sliderType = .linear
         slider.minValue = 0.2; slider.maxValue = 1.0
         slider.doubleValue = Double(panel.alphaValue)

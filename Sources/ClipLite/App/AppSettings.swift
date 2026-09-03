@@ -1,9 +1,22 @@
 import AppKit
 import Carbon.HIToolbox
+import ServiceManagement
 
 struct HotKey: Codable, Equatable {
     var keyCode: UInt32
     var modifiers: UInt32
+}
+
+enum HotKeyFormatter {
+    static func label(_ hk: HotKey) -> String {
+        var s = ""
+        if hk.modifiers & UInt32(controlKey) != 0 { s += "⌃" }
+        if hk.modifiers & UInt32(shiftKey)   != 0 { s += "⇧" }
+        if hk.modifiers & UInt32(optionKey)  != 0 { s += "⌥" }
+        if hk.modifiers & UInt32(cmdKey)     != 0 { s += "⌘" }
+        s += HotKeyLabel.keyCodeToString(hk.keyCode)
+        return s
+    }
 }
 
 /// 把 Carbon 键码转成人类可读字符，仅用于菜单显示。
@@ -82,6 +95,19 @@ final class AppSettings {
     }
     func setScreenshot(_ hk: HotKey) { encode(kScreenshot, hk) }
     func setPinClipboard(_ hk: HotKey) { encode(kPinClipboard, hk) }
+
+    // 开机自启（SMAppService，macOS 13+）
+    var launchAtLogin: Bool {
+        get { SMAppService.mainApp.status == .enabled }
+        set {
+            do {
+                if newValue { try SMAppService.mainApp.register() }
+                else { try SMAppService.mainApp.unregister() }
+            } catch {
+                NSLog("AppSettings: 开机自启切换失败 \(error)")
+            }
+        }
+    }
 
     private func decode(_ key: String) -> HotKey? {
         guard let data = d.data(forKey: key) else { return nil }

@@ -5,6 +5,16 @@ import Carbon.HIToolbox
 final class HotKeyCenter {
     static let shared = HotKeyCenter()
 
+    /// 把 NSEvent 修饰键转成 Carbon RegisterEventHotKey 需要的掩码。
+    static func carbonFlags(from f: NSEvent.ModifierFlags) -> UInt32 {
+        var m: UInt32 = 0
+        if f.contains(.command) { m |= UInt32(cmdKey) }
+        if f.contains(.option)  { m |= UInt32(optionKey) }
+        if f.contains(.shift)   { m |= UInt32(shiftKey) }
+        if f.contains(.control) { m |= UInt32(controlKey) }
+        return m
+    }
+
     private var refs: [UInt32: EventHotKeyRef] = [:]
     private var handlers: [UInt32: () -> Void] = [:]
     private var eventHandlerRef: EventHandlerRef?
