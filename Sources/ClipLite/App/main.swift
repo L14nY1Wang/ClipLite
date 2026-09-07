@@ -1,5 +1,24 @@
 import AppKit
 
+// OCR 子进程：读 PNG 路径 → Vision 同步识别 → print 文本到 stdout → 退出。
+// 主进程通过 fork 本二进制 + 此 flag 隔离 Vision 模型内存（~52MB 随子进程 exit 回收）。
+// 放最前：子进程不需要 NSApplication，避免拉起 AppKit 重资源。
+if let i = CommandLine.arguments.firstIndex(of: "--ocr-worker"), i + 1 < CommandLine.arguments.count {
+    let pngPath = CommandLine.arguments[i + 1]
+    if let img = OCRWorker.loadImage(path: pngPath) {
+        do {
+            let text = try VisionOCR.perform(img)
+            print(text)
+            exit(0)
+        } catch {
+            FileHandle.standardError.write("OCR worker failed: \(error)\n".data(using: .utf8) ?? Data())
+        }
+    } else {
+        FileHandle.standardError.write("OCR worker: 无法加载图片 \(pngPath)\n".data(using: .utf8) ?? Data())
+    }
+    exit(1)
+}
+
 // 自测模式：截屏 → 裁剪中心区域 → 写 PNG → 打印内存，用于命令行验证
 if CommandLine.arguments.contains("--selftest") {
     SelfTest.run()
