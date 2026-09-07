@@ -82,19 +82,31 @@ final class AppSettings {
     static let shared = AppSettings()
     private let d = UserDefaults.standard
 
-    private let kScreenshot = "screenshotHotKey"
-    private let kPinClipboard = "pinClipboardHotKey"
+    // 原生整数键（keyCode / modifiers 分两个 NSNumber）；
+    // 旧版存 JSON Data 于 kScreenshot/kPinClipboard，读取时兼容回退。
+    private let kScreenshotKC = "screenshotHotKeyKC"
+    private let kScreenshotMods = "screenshotHotKeyMods"
+    private let kPinClipboardKC = "pinClipboardHotKeyKC"
+    private let kPinClipboardMods = "pinClipboardHotKeyMods"
+    private let kScreenshotLegacy = "screenshotHotKey"
+    private let kPinClipboardLegacy = "pinClipboardHotKey"
 
     var screenshotHotKey: HotKey {
-        decode(kScreenshot) ?? HotKey(keyCode: UInt32(kVK_ANSI_1),
-                                      modifiers: UInt32(optionKey))
+        decodeInts(kScreenshotKC, kScreenshotMods) ?? decodeLegacy(kScreenshotLegacy)
+            ?? HotKey(keyCode: UInt32(kVK_ANSI_1), modifiers: UInt32(optionKey))
     }
     var pinClipboardHotKey: HotKey {
-        decode(kPinClipboard) ?? HotKey(keyCode: UInt32(kVK_ANSI_2),
-                                         modifiers: UInt32(optionKey))
+        decodeInts(kPinClipboardKC, kPinClipboardMods) ?? decodeLegacy(kPinClipboardLegacy)
+            ?? HotKey(keyCode: UInt32(kVK_ANSI_2), modifiers: UInt32(optionKey))
     }
-    func setScreenshot(_ hk: HotKey) { encode(kScreenshot, hk) }
-    func setPinClipboard(_ hk: HotKey) { encode(kPinClipboard, hk) }
+    func setScreenshot(_ hk: HotKey) {
+        encodeInts(kScreenshotKC, kScreenshotMods, hk)
+        d.removeObject(forKey: kScreenshotLegacy)
+    }
+    func setPinClipboard(_ hk: HotKey) {
+        encodeInts(kPinClipboardKC, kPinClipboardMods, hk)
+        d.removeObject(forKey: kPinClipboardLegacy)
+    }
 
     // 开机自启（SMAppService，macOS 13+）
     var launchAtLogin: Bool {
@@ -109,11 +121,17 @@ final class AppSettings {
         }
     }
 
-    private func decode(_ key: String) -> HotKey? {
+    private func decodeInts(_ kcKey: String, _ modsKey: String) -> HotKey? {
+        guard let kc = d.object(forKey: kcKey) as? NSNumber,
+              let mods = d.object(forKey: modsKey) as? NSNumber else { return nil }
+        return HotKey(keyCode: kc.uint32Value, modifiers: mods.uint32Value)
+    }
+    private func encodeInts(_ kcKey: String, _ modsKey: String, _ hk: HotKey) {
+        d.set(hk.keyCode, forKey: kcKey)
+        d.set(hk.modifiers, forKey: modsKey)
+    }
+    private func decodeLegacy(_ key: String) -> HotKey? {
         guard let data = d.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(HotKey.self, from: data)
-    }
-    private func encode(_ key: String, _ hk: HotKey) {
-        if let data = try? JSONEncoder().encode(hk) { d.set(data, forKey: key) }
     }
 }

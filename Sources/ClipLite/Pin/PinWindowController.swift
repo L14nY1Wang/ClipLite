@@ -43,7 +43,17 @@ final class PinWindowController: NSObject, NSWindowDelegate {
 
     func show() { panel.orderFrontRegardless() }
 
-    func windowWillClose(_ notification: Notification) { onClose?() }
+    deinit { NSLog("ClipLite[mem] PinWindowController deinit") }
+
+    func windowWillClose(_ notification: Notification) {
+        // 贴图关闭时连带带走 OCR 面板：可见窗口会被 AppKit 隐式持有，不 orderOut 会永久残留在屏幕上
+        ocrPanel?.orderOut(nil)
+        // 断开 panel→pinView 强引用，让 pinView/cgImage 随控制器释放。
+        panel.contentView = nil
+        let callback = onClose
+        onClose = nil
+        callback?()
+    }
 
     // MARK: - 右键菜单动作
     @objc func close() { panel.close() }
@@ -57,14 +67,17 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     @objc func recognize() {
         if ocrPanel == nil { ocrPanel = OCRResultPanel() }
         let img = pinView.cgImage
-        VisionOCR.recognize(img) { [weak self] text in
+        VisionOCR.recognize(img) { [weak self] result in
             guard let self = self else { return }
             let above = NSWindow.Level(rawValue: Int(self.panel.level.rawValue) + 1)
+            let text: String
+            switch result {
+            case .success(let t): text = t
+            case .failure(let error): text = "识别失败（\(error.localizedDescription)）"
+            }
             self.ocrPanel?.show(text: text, below: self.panel.frame, level: above)
         }
     }
-
-    private var menuOpacitySlider: NSSlider?
 
     func showMenu(event: NSEvent) {
         let m = NSMenu()
@@ -88,7 +101,6 @@ final class PinWindowController: NSObject, NSWindowDelegate {
         slider.target = self
         slider.action = #selector(opacityChanged(_:))
         container.addSubview(slider)
-        menuOpacitySlider = slider
         let opItem = NSMenuItem()
         opItem.view = container
         m.addItem(opItem)

@@ -7,24 +7,22 @@ final class SelectionController {
     private var windows: [SelectionWindow] = []
 
     func start() {
-        let ok = ScreenCapture.preflight()
-        NSLog("ClipLite.trace Selection.start preflight=\(ok)")
-        guard ok else {
+        guard ScreenCapture.preflight() else {
             _ = ScreenCapture.request()
             coordinator?.didCancelSelection()
             return
         }
         Task { [weak self] in
+            guard let self else { return }
             do {
                 let displays = try await ScreenCapture.captureAll()
-                NSLog("ClipLite.trace captured displays=\(displays.count) px=\(displays.first.map{ "\($0.image.width)x\($0.image.height)" } ?? "n/a")")
                 let windowList = Self.snapshotWindowList()
                 await MainActor.run {
-                    self?.present(displays: displays, windowList: windowList)
+                    self.present(displays: displays, windowList: windowList)
                 }
             } catch {
                 NSLog("SelectionController: capture failed \(error)")
-                await MainActor.run { self?.coordinator?.didCancelSelection() }
+                await MainActor.run { self.coordinator?.didCancelSelection() }
             }
         }
     }
@@ -50,7 +48,6 @@ final class SelectionController {
         let keyWin = made.first { $0.frame.contains(cursor) } ?? made.first
         keyWin?.makeKeyAndOrderFront(nil)
         if let kv = keyWin, let v = kv.contentView { kv.makeFirstResponder(v) }
-        NSLog("ClipLite.trace present windows=\(made.count) frames=\(made.map{ NSStringFromRect($0.frame) }.joined(separator: ","))")
     }
 
     // MARK: - 回调

@@ -5,7 +5,6 @@ import AppKit
 final class PinView: NSView {
     let cgImage: CGImage
     let baseSize: NSSize
-    var zoom: CGFloat = 1
     weak var owner: PinWindowController?
 
     private enum Mode { case idle, move, resize }
@@ -21,6 +20,7 @@ final class PinView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { NSLog("ClipLite[mem] PinView deinit cgImage=\(cgImage.width)x\(cgImage.height)") }
 
     override var isFlipped: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -92,10 +92,10 @@ final class PinView: NSView {
     override func scrollWheel(with event: NSEvent) {
         guard let w = window else { return }
         let factor: CGFloat = event.deltaY > 0 ? 1.1 : (event.deltaY < 0 ? 1 / 1.1 : 1)
-        let newZoom = min(16, max(0.1, zoom * factor))
-        if newZoom == zoom { return }
-        zoom = newZoom
-        let newSize = NSSize(width: baseSize.width * zoom, height: baseSize.height * zoom)
+        // 以当前窗口尺寸为基准缩放（尊重 grip 拖出的自定义宽高比），上下限保留相对 baseSize 的 0.1×…16×
+        let newSize = NSSize(width: w.frame.width * factor, height: w.frame.height * factor)
+        guard newSize.width >= baseSize.width * 0.1, newSize.height >= baseSize.height * 0.1,
+              newSize.width <= baseSize.width * 16, newSize.height <= baseSize.height * 16 else { return }
         let cursor = NSEvent.mouseLocation
         var f = w.frame
         let fx = (cursor.x - f.minX) / f.width

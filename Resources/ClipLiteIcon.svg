@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>ClipLite</title>
+  <rect width="1024" height="1024" rx="224" fill="#2F80ED"/>
+  <g transform="rotate(-24 512 512)">
+    <path fill="#fff" d="M280 260q0-30 30-30h404q30 0 30 30v170H620v90l70 90H560l-48 210-48-210H334l70-90v-90H280V260Z"/>
+  </g>
+  <g aria-label="Lite">
+    <rect x="730" y="842" width="230" height="100" rx="50" fill="#fff"/>
+    <text x="845" y="910" fill="#2F80ED" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" font-size="56" font-weight="700" text-anchor="middle">Lite</text>
+  </g>
+</svg>

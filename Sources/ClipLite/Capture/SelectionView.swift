@@ -172,20 +172,8 @@ final class SelectionView: NSView {
     }
 
     private func drawSizeLabel(_ selView: NSRect) {
-        let px = Int(selView.width * scaleX)
-        let py = Int(selView.height * scaleY)
-        let text = "\(px) × \(py)"
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-        let size = (text as NSString).size(withAttributes: attrs)
-        var box = NSRect(x: selView.minX, y: selView.maxY + 6,
-                         width: size.width + 12, height: size.height + 6)
-        if box.maxY > bounds.maxY { box.origin.y = selView.maxY - 6 - box.height }
-        if box.maxX > bounds.maxX { box.origin.x = bounds.maxX - box.width }
-        if box.minX < 0 { box.origin.x = 0 }
-        NSColor.black.withAlphaComponent(0.7).setFill()
-        NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
-        (text as NSString).draw(at: NSPoint(x: box.minX + 6, y: box.minY + 3), withAttributes: attrs)
+        SizeLabelPainter.draw(for: selView, px: Int(selView.width * scaleX),
+                              py: Int(selView.height * scaleY), in: bounds)
     }
 
     private func drawMagnifier() {
@@ -223,7 +211,7 @@ final class SelectionView: NSView {
                 let x = imgRect.minX + CGFloat(i) * zoom
                 let y = imgRect.minY + CGFloat(i) * zoom
                 NSBezierPath(rect: NSRect(x: x, y: imgRect.minY, width: 0, height: imgRect.height)).stroke()
-                let _ = y
+                NSBezierPath(rect: NSRect(x: imgRect.minX, y: y, width: imgRect.width, height: 0)).stroke()
             }
             // 中心十字
             NSColor.systemRed.setStroke()

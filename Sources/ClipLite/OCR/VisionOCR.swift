@@ -3,7 +3,7 @@ import AppKit
 
 /// 系统内置 Vision OCR：离线、免费、无 key。中英文混排。
 enum VisionOCR {
-    static func recognize(_ image: CGImage, completion: @escaping (String) -> Void) {
+    static func recognize(_ image: CGImage, completion: @escaping (Result<String, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             var text = ""
             let request = VNRecognizeTextRequest { req, _ in
@@ -19,8 +19,10 @@ enum VisionOCR {
                 try handler.perform([request])
             } catch {
                 NSLog("VisionOCR: \(error)")
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
             }
-            DispatchQueue.main.async { completion(text) }
+            DispatchQueue.main.async { completion(.success(text)) }
         }
     }
 }

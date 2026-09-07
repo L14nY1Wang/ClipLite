@@ -66,8 +66,7 @@ final class AppCoordinator: NSObject {
     }
 
     @objc private func onTrigger(_ note: Notification) {
-        let action = (note.userInfo?["action"] as? String) ?? "capture"
-        NSLog("ClipLite.trace onTrigger action=\(action)")
+        guard let action = note.userInfo?["action"] as? String else { return }   // 未知/缺失 action 一律忽略
         DispatchQueue.main.async {
             switch action {
             case "capture": self.startCapture()
@@ -80,7 +79,6 @@ final class AppCoordinator: NSObject {
 
     // MARK: - 截图
     @objc func startCapture() {
-        NSLog("ClipLite.trace startCapture enter (selection=\(selection == nil ? "nil" : "busy"))")
         guard selection == nil else { return } // 已有进行中的会话则忽略
         let sel = SelectionController()
         sel.coordinator = self
@@ -134,11 +132,11 @@ final class AppCoordinator: NSObject {
     }
 
     @objc func relaunch() {
-        let bundlePath = Bundle.main.bundlePath
-        let task = Process()
-        task.launchPath = "/bin/sh"
-        task.arguments = ["-c", "sleep 1; open \"\(bundlePath)\""]
-        try? task.run()
+        // 先异步 1s 再退：open 需要当前进程仍在会话中才能正确拉起
+        let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            NSWorkspace.shared.open(bundleURL)
+        }
         NSApp.terminate(nil)
     }
 

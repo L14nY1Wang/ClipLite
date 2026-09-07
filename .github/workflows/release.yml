@@ -55,7 +55,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$RUNNER_PASS" "$KEYCHAIN"
           rm cert.p12
           ID="$(security find-identity -p codesigning -v | grep -m1 'Developer ID Application' | sed -E 's/.*"([^"]+)".*/\1/')"
-          echo "CLIPITE_SIGN_IDENTITY=$ID" >> "$GITHUB_ENV"
+          echo "CLIPLITE_SIGN_IDENTITY=$ID" >> "$GITHUB_ENV"
           echo "签名身份：$ID"
         env:
           P12_B64: ${{ secrets.DEV_ID_CERT_P12_B64 }}
@@ -66,7 +66,7 @@ jobs:
         if: steps.skip.outputs.exists == 'false'
         run: bash scripts/build-dmg.sh
         env:
-          CLIPITE_SIGN_IDENTITY: ${{ env.CLIPITE_SIGN_IDENTITY }}
+          CLIPLITE_SIGN_IDENTITY: ${{ env.CLIPLITE_SIGN_IDENTITY }}
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
           APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
           APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_B64 }}
@@ -89,7 +89,7 @@ jobs:
           files: ${{ steps.info.outputs.dmg }}
           generate_release_notes: true
           body: |
-            ${{ env.CLIPITE_SIGN_IDENTITY && 'Developer ID 签名 + Apple 公证（Gatekeeper 可直接打开）。' || '自签名未公证：首次打开请右键→打开。' }}
+            ${{ env.CLIPLITE_SIGN_IDENTITY && 'Developer ID 签名 + Apple 公证（Gatekeeper 可直接打开）。' || '自签名未公证：首次打开请右键→打开。' }}
 
             DMG sha256：`${{ steps.info.outputs.sha }}`
 

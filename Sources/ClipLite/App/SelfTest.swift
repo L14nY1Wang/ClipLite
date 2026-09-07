@@ -19,7 +19,7 @@ enum SelfTest {
                 let sf = d.screen.frame
                 let bs = d.screen.backingScaleFactor
                 print("SELFTEST: screen.frame(points)=\(sf) backingScale=\(bs)")
-                print("SELFTEST: capture(px)=\(d.image.width)x\(d.image.height) CGDisplayBounds=\(d.cgRect)")
+                print("SELFTEST: capture(px)=\(d.image.width)x\(d.image.height)")
                 print("SELFTEST: 期望px=\(sf.width)bx\(sf.height)b=  (\(sf.width*bs)x\(sf.height*bs))  scaleX=\(Double(d.image.width)/sf.width) scaleY=\(Double(d.image.height)/sf.height)")
                 let img = d.image
                 let w = min(300, img.width)
@@ -30,7 +30,11 @@ enum SelfTest {
                 let url = URL(fileURLWithPath: "/tmp/cliplite-selftest.png")
                 let rep = NSBitmapImageRep(cgImage: crop)
                 if let png = rep.representation(using: .png, properties: [:]) {
-                    try? png.write(to: url)
+                    do {
+                        try png.write(to: url)
+                    } catch {
+                        print("SELFTEST: PNG 写入失败 \(url.path): \(error)")
+                    }
                 }
                 let rss = rssKB()
                 print("SELFTEST: OK display=\(d.displayID) image=\(img.width)x\(img.height) crop=\(w)x\(h) png=\(url.path) RSS=\(rss)KB")

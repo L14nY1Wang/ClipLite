@@ -1,9 +1,10 @@
 #!/bin/bash
 # 幂等地创建稳定的本地代码签名身份 "SnapLite Dev"：清理旧证书 → 生成 → 导入 → 设为受信 → 校验。
 # ⚠️ 在【你自己的“终端”App】里运行；导入/信任可能弹窗，输入你的 Mac 登录密码并点允许。
-#     bash "/Users/lianyi/Workspace/截屏软件/scripts/make-identity.sh"
+#     bash "<本仓库>/scripts/make-identity.sh"
 set -e
 IDENT="SnapLite Dev"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 KC="$HOME/Library/Keychains/login.keychain-db"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
@@ -37,7 +38,7 @@ echo "✅ 校验有效身份："
 if security find-identity -v -p codesigning "$KC" 2>/dev/null | grep -q "$IDENT"; then
   security find-identity -v -p codesigning "$KC" | grep "$IDENT"
   echo
-  echo "接着运行： cd \"/Users/lianyi/Workspace/截屏软件\" && make reset-perm && make app && open build/ClipLite.app"
+  echo "接着运行： cd \"$REPO\" && make reset-perm && make app && open build/ClipLite.app"
   echo "首次 codesign 若弹“想要使用密钥 $IDENT”，点【始终允许】。"
 else
   echo "❌ 仍无有效身份。请把本脚本完整输出发给我。"

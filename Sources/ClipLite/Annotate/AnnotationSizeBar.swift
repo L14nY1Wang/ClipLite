@@ -42,8 +42,5 @@ final class AnnotationSizeBar: NSPanel {
         contentView = effect
     }
 
-    var currentValue: CGFloat { CGFloat(slider.doubleValue) }
-    func setValue(_ v: CGFloat) { slider.doubleValue = Double(v) }
-
     @objc private func changed(_ s: NSSlider) { onSize?(CGFloat(s.doubleValue)) }
 }

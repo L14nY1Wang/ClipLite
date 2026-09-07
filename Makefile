@@ -16,11 +16,18 @@ SIGN      := $(if $(IDENTITY),$(IDENTITY),-)
 
 # 组装 .app bundle
 app: build
-	@rm -rf "$(APP)"
-	@mkdir -p "$(APP)/Contents/MacOS"
+	@rm -rf "$(APP)" /tmp/ClipLite.iconset
+	@mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources" /tmp/ClipLite.iconset
+	@for size in 16 32 128 256 512; do \
+		sips -s format png -z $$size $$size Resources/ClipLiteIcon.svg --out /tmp/ClipLite.iconset/icon_$${size}x$${size}.png >/dev/null || exit 1; \
+		double=$$((size * 2)); \
+		sips -s format png -z $$double $$double Resources/ClipLiteIcon.svg --out /tmp/ClipLite.iconset/icon_$${size}x$${size}@2x.png >/dev/null || exit 1; \
+	done
+	@iconutil -c icns /tmp/ClipLite.iconset -o "$(APP)/Contents/Resources/ClipLiteIcon.icns"
+	@cp Resources/ClipLiteMenuBar.svg "$(APP)/Contents/Resources/ClipLiteMenuBar.svg"
 	@cp "$(BINARY)" "$(APP)/Contents/MacOS/ClipLite"
 	@cp "$(PLIST)" "$(APP)/Contents/Info.plist"
-	@printf "APPL????" > "$(APP)/Contents/PkgInfo"
+	@printf 'APPL????' > "$(APP)/Contents/PkgInfo"
 	@codesign --force --deep --sign "$(SIGN)" --identifier "$(BUNDLE_ID)" "$(APP)" 2>/dev/null || true
 	@echo "✔ 构建完成：$(APP)  [签名: $(if $(IDENTITY),$(IDENTITY),ad-hoc 临时——如需免重复授权请运行 scripts/make-identity.sh)]"
 

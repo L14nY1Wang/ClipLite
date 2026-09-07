@@ -27,7 +27,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         toolbar.onSelectTool = { [weak self] tool in
             guard let self = self else { return }
             self.canvas.currentTool = tool
-            self.setShowSizeBar(tool.isSizeAdjustable)   // 仅可缩放工具出现大小条
+            self.setShowSizeBar(true)
         }
         toolbar.onColor = { [weak self] color in self?.canvas.currentColor = color }
         toolbar.onAction = { [weak self] action in self?.handle(action) }
@@ -42,7 +42,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         let above = NSWindow.Level(rawValue: Int(window.level.rawValue) + 1)
         toolbar.level = above
         sizeBar.level = above
-        setShowSizeBar(canvas.currentTool.isSizeAdjustable)
+        setShowSizeBar(true)
         repositionToolbar()
         toolbar.orderFrontRegardless()
         toolbar.highlightDefaultTool()
@@ -53,10 +53,17 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         repositionToolbar()
     }
 
+    deinit { NSLog("ClipLite[mem] AnnotationWindowController deinit") }
+
     func windowWillClose(_ notification: Notification) {
         toolbar.orderOut(nil)
         sizeBar.orderOut(nil)
         ocrPanel?.orderOut(nil)
+        // 断开 window→canvas 强引用，让 canvas/baseImage 随控制器一起释放，
+        // 否则整屏 backing store（22MB@2x）要等 AppKit 内部延迟回收。
+        window.contentView = nil
+        toolbar.contentView = nil
+        sizeBar.contentView = nil
         coordinator?.annotationDidClose()
     }
 
@@ -71,7 +78,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         var toolbarOrigin = NSPoint(x: selGlobal.maxX - tb.width, y: selGlobal.minY - tb.height - gap)
         let sf = screen.frame
         let stackH = tb.height + (sizeBar.isVisible ? sb.height + gap : 0)
-        var below = selGlobal.minY - stackH - gap
+        let below = selGlobal.minY - stackH - gap
         let placeAbove = below < sf.minY
         if placeAbove { toolbarOrigin.y = selGlobal.maxY + gap }
         toolbarOrigin.x = min(max(toolbarOrigin.x, sf.minX + 4), sf.maxX - tb.width - 4)
@@ -120,13 +127,19 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         panel.nameFieldStringValue = "ClipLite-\(Int(Date().timeIntervalSince1970)).png"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let rep = NSBitmapImageRep(cgImage: img)
-        if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: url) }
+        if let png = rep.representation(using: .png, properties: [:]) {
+            do {
+                try png.write(to: url)
+            } catch {
+                NSLog("ClipLite: 保存 PNG 失败 \(url.path): \(error)")
+            }
+        }
         close()
     }
 
     private func runOCR() {
         guard let img = canvas.renderFinal() else { return }
-        VisionOCR.recognize(img) { [weak self] text in
+        VisionOCR.recognize(img) { [weak self] result in
             guard let self = self else { return }
             if self.ocrPanel == nil { self.ocrPanel = OCRResultPanel() }
             // 蓝框的全局坐标
@@ -135,6 +148,11 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
                            width: self.canvas.selection.width, height: self.canvas.selection.height)
             // 面板浮在整屏标注窗之上，并停靠蓝框下方
             let above = NSWindow.Level(rawValue: Int(self.window.level.rawValue) + 1)
+            let text: String
+            switch result {
+            case .success(let t): text = t
+            case .failure(let error): text = "识别失败（\(error.localizedDescription)）"
+            }
             self.ocrPanel?.show(text: text, below: g, level: above)
         }
     }

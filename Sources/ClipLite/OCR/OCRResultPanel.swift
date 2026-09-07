@@ -10,7 +10,7 @@ final class OCRResultPanel: NSPanel {
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: panelW, height: panelH),
-                   styleMask: [.borderless, .nonactivatingPanel, .titled],
+                   styleMask: [.titled, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isReleasedWhenClosed = false
         level = .floating

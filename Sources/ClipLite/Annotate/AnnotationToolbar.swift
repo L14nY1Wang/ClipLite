@@ -56,14 +56,14 @@ final class AnnotationToolbar: NSPanel {
             (.mosaic, "square.grid.3x3", "马赛克")
         ]
         for (tool, symbol, tip) in tools {
-            let b = symbolButton(symbol, tip, tag: 0)
+            let b = symbolButton(symbol, tip)
             toolButtons[b] = tool
             stack.addArrangedSubview(b)
         }
         stack.addArrangedSubview(separator())
 
         for (name, color) in palette {
-            let b = symbolButton("circle.fill", name, tag: 1)
+            let b = symbolButton("circle.fill", name)
             b.image = colorSwatch(color)
             colorButtons[b] = color
             stack.addArrangedSubview(b)
@@ -79,7 +79,7 @@ final class AnnotationToolbar: NSPanel {
             (.cancel, "xmark.circle", "取消")
         ]
         for (action, symbol, tip) in actions {
-            let b = symbolButton(symbol, tip, tag: 2)
+            let b = symbolButton(symbol, tip)
             actionButtons[b] = action
             stack.addArrangedSubview(b)
         }
@@ -96,7 +96,7 @@ final class AnnotationToolbar: NSPanel {
         contentView?.addSubview(v)
     }
 
-    private func symbolButton(_ symbol: String, _ tip: String, tag: Int) -> NSButton {
+    private func symbolButton(_ symbol: String, _ tip: String) -> NSButton {
         let b = NSButton(title: "", target: self, action: #selector(clicked(_:)))
         let cfg = NSImage.SymbolConfiguration(pointSize: 19, weight: .regular)
         b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)?

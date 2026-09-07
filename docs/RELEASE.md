@@ -37,7 +37,7 @@ CI 会：建临时钥匙串→导入 Developer ID 证书→以 **Hardened Runtim
 ## 3. 本地发布（可选，有证书时）
 
 ```bash
-export CLIPITE_SIGN_IDENTITY="Developer ID Application: 你的名字 (TEAMID)"
+export CLIPLITE_SIGN_IDENTITY="Developer ID Application: 你的名字 (TEAMID)"
 export APPLE_KEY_ID=... APPLE_ISSUER_ID=... APPLE_API_KEY_P8_B64="$(base64 -i ~/AuthKey.p8)"
 make dmg         # 自动完成签名 + 公证 + 装订，并打印 sha256
 ```

@@ -18,13 +18,13 @@ final class HotKeyCenter {
     private var refs: [UInt32: EventHotKeyRef] = [:]
     private var handlers: [UInt32: () -> Void] = [:]
     private var eventHandlerRef: EventHandlerRef?
-    private let signature: OSType = 0x534E504C // "CLPL"
+    private let signature: OSType = 0x534E504C // "SNPL"（ClipLite 产品名缩写，任意自定义值均可）
 
     func register(id: UInt32, keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) {
         installIfNeeded()
         unregister(id: id)
         var ref: EventHotKeyRef?
-        var hotKeyID = EventHotKeyID(signature: signature, id: id)
+        let hotKeyID = EventHotKeyID(signature: signature, id: id)
         let status = RegisterEventHotKey(keyCode,
                                          modifiers,
                                          hotKeyID,

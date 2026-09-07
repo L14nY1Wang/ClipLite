@@ -200,6 +200,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func save(_ kind: Kind, _ hk: HotKey) {
         let s = AppSettings.shared
+        // 与另一热键冲突时拒绝：不覆盖已保存配置，响一声提示，标题保持原样
+        let other: HotKey = (kind == .screenshot) ? s.pinClipboardHotKey : s.screenshotHotKey
+        if hk == other {
+            NSSound.beep()
+            return
+        }
         switch kind {
         case .screenshot: s.setScreenshot(hk)
         case .pin:        s.setPinClipboard(hk)
@@ -214,6 +220,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        stopRecording()   // 关窗时移除 local monitor，避免驻留吞键
         window?.level = .normal
         // 关设置后回到“仅菜单栏常驻”
         NSApp.setActivationPolicy(.accessory)

@@ -46,6 +46,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    deinit { NSLog("ClipLite[mem] AnnotationCanvas deinit baseImage=\(baseImage.width)x\(baseImage.height)") }
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
@@ -118,7 +119,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             }
         case .resize, .move:
             break
-        case .none, .draw: break
+        case .none: break
         }
         mode = .none; draft = nil; draftStart = nil; needsDisplay = true
     }
@@ -199,7 +200,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private func commitTextEditorIfNeeded() {
         guard let editor = textEditor else { return }
         let str = editor.stringValue
-        let origin = NSPoint(x: editor.frame.minX, y: editor.frame.maxY)
+        let origin = NSPoint(x: editor.frame.minX, y: editor.frame.minY)
         editor.removeFromSuperview(); textEditor = nil
         if !str.isEmpty {
             items.append(AnnotationItem(kind: .text, color: currentColor, lineWidth: lineWidth,
@@ -255,17 +256,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     private func drawSizeLabel(_ sel: NSRect) {
-        let px = Int(sel.width * scaleX), py = Int(sel.height * scaleY)
-        let text = "\(px) × \(py)"
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-        let size = (text as NSString).size(withAttributes: attrs)
-        var box = NSRect(x: sel.minX, y: sel.maxY + 6, width: size.width + 12, height: size.height + 6)
-        if box.maxY > bounds.maxY { box.origin.y = sel.maxY - 6 - box.height }
-        if box.maxX > bounds.maxX { box.origin.x = bounds.maxX - box.width }
-        NSColor.black.withAlphaComponent(0.7).setFill()
-        NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
-        (text as NSString).draw(at: NSPoint(x: box.minX + 6, y: box.minY + 3), withAttributes: attrs)
+        SizeLabelPainter.draw(for: sel, px: Int(sel.width * scaleX), py: Int(sel.height * scaleY), in: bounds)
     }
 
     // MARK: - 合成输出（按选取框裁剪）

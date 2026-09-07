@@ -10,7 +10,6 @@ enum ScreenCapture {
     struct Display {
         let displayID: CGDirectDisplayID
         let screen: NSScreen
-        let cgRect: CGRect // CG 全局坐标（左上原点），用于 CGWindowList 边界换算
         let image: CGImage
     }
 
@@ -30,8 +29,7 @@ enum ScreenCapture {
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let image = try await captureImage(filter: filter, configuration: config)
-            let cgRect = CGDisplayBounds(display.displayID)
-            out.append(Display(displayID: display.displayID, screen: screen, cgRect: cgRect, image: image))
+            out.append(Display(displayID: display.displayID, screen: screen, image: image))
         }
         return out
     }
