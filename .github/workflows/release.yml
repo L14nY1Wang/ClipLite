@@ -43,7 +43,9 @@ jobs:
           fi
 
       - name: Set up signing keychain
-        if: steps.skip.outputs.exists == 'false' && secrets.DEV_ID_CERT_P12_B64 != ''
+        if: steps.skip.outputs.exists == 'false' && env.HAS_DEV_ID_CERT == 'true'
+        env:
+          HAS_DEV_ID_CERT: ${{ secrets.DEV_ID_CERT_P12_B64 != '' }}
         run: |
           set -e
           echo "$P12_B64" | base64 --decode > cert.p12
@@ -94,8 +96,9 @@ jobs:
             DMG sha256：`${{ steps.info.outputs.sha }}`
 
       - name: Update Homebrew tap
-        if: steps.skip.outputs.exists == 'false' && secrets.TAP_PAT != ''
+        if: steps.skip.outputs.exists == 'false' && env.HAS_TAP_PAT == 'true'
         env:
+          HAS_TAP_PAT: ${{ secrets.TAP_PAT != '' }}
           TAP_PAT: ${{ secrets.TAP_PAT }}
           OWNER: ${{ github.repository_owner }}
           VER: ${{ steps.info.outputs.ver }}
