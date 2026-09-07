@@ -46,6 +46,9 @@ jobs:
         if: steps.skip.outputs.exists == 'false' && env.HAS_DEV_ID_CERT == 'true'
         env:
           HAS_DEV_ID_CERT: ${{ secrets.DEV_ID_CERT_P12_B64 != '' }}
+          P12_B64: ${{ secrets.DEV_ID_CERT_P12_B64 }}
+          P12_PASS: ${{ secrets.DEV_ID_CERT_PASSWORD }}
+          RUNNER_PASS: runnerpass
         run: |
           set -e
           echo "$P12_B64" | base64 --decode > cert.p12
@@ -59,10 +62,6 @@ jobs:
           ID="$(security find-identity -p codesigning -v | grep -m1 'Developer ID Application' | sed -E 's/.*"([^"]+)".*/\1/')"
           echo "CLIPLITE_SIGN_IDENTITY=$ID" >> "$GITHUB_ENV"
           echo "签名身份：$ID"
-        env:
-          P12_B64: ${{ secrets.DEV_ID_CERT_P12_B64 }}
-          P12_PASS: ${{ secrets.DEV_ID_CERT_PASSWORD }}
-          RUNNER_PASS: runnerpass
 
       - name: Build DMG (sign + notarize + staple)
         if: steps.skip.outputs.exists == 'false'
