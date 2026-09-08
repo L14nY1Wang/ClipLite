@@ -2,7 +2,7 @@
 
 > 一款追求**极低内存占用**的 macOS 截图 / 贴图 / 标注 / OCR 小工具。
 
-用 **纯 Swift + AppKit、零第三方依赖**从零实现。空闲物理内存约 **10.8MB**，功能覆盖截图、贴图、标注、离线 OCR。
+用 **纯 Swift + AppKit、零第三方依赖**从零实现。空闲物理内存约 **7MB**，功能覆盖截图、贴图、标注、离线 OCR。
 
 ## 安装
 
@@ -40,7 +40,7 @@ brew install --cask cliplite
 
 发布版目前默认使用 **ad-hoc 签名、未公证**。升级后代码指纹变化，或之前运行过使用同一 bundle id 的本地签名版本，都可能使旧录屏授权失效；设置里已勾选也可能需要重新授权。
 
-1. 从菜单栏选择「退出 ClipLite」。**v0.1.1 的「重启应用」菜单存在只退出、不重新打开的问题**，恢复时请手动退出、打开。
+1. 从菜单栏选择「退出 ClipLite」。（「重启应用」菜单已修复：拉起独立 shell 进程等待本进程退出后再 `open`，可正常重启；若仍异常，请手动退出、打开。）
 2. 在终端执行下面的命令，仅重置发布版 ClipLite 的屏幕录制授权，不影响其他应用：
 
    ```bash
@@ -97,7 +97,7 @@ make reset-perm && make app && open build/ClipLite.app
 
 ## 内存表现
 
-空闲常驻**物理占用约 10.8 MB**（Activity Monitor 口径；`RSS` 约 43 MB 是因为含共享的系统框架，不代表真实负担）。约为 PixPin 的 1/20、Snipaste 的 1/6。
+空闲常驻**物理占用约 7 MB**（Activity Monitor 口径；`RSS` 约 31 MB 是因为含共享的系统框架，不代表真实负担）。约为 PixPin 的 1/30~1/60、Snipaste 的 1/9~1/14。
 
 复现：`make app && open build/ClipLite.app`，再 `bash scripts/memaudit.sh`。完整测量方法与逐场景分析见 [docs/MEMORY-AUDIT.md](docs/MEMORY-AUDIT.md)。
 

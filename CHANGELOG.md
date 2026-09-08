@@ -4,6 +4,22 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+修复截图权限反馈、应用重启与签名身份隔离（合并自 `fix/capture-permissions-and-relaunch`）。
+
+### 修复
+- **重启应用「只退不开」**：v0.1.1 的 relaunch 用 `NSWorkspace.shared.open` + `asyncAfter` 延迟打开，但进程 `terminate` 后已不在会话中，open 无效。改为拉起独立 `/bin/sh` 进程，以 `while kill -0 $PID` 轮询等待父进程退出后再 `exec /usr/bin/open`，路径以参数传递避免 shell 插值。
+- **截图权限缺失/失败无反馈**：`SelectionController.start` 在权限不足或截图异常时改为弹 `NSAlert`（含「打开录屏设置」按钮），不再静默取消。
+- **CHANGELOG 0.1.1 的 relaunch 描述**：原文称「改用 `NSWorkspace.shared.open` 替代 `/bin/sh` 子进程拼接，更稳更省」，实际该方案存在只退不开问题，已由本条修复回 shell watcher 方式。
+
+### 变更
+- **开发版与发布版签名身份隔离**：`make app` 默认构建开发版 `build/ClipLite.app`，bundle id `com.lianyi.cliplite.dev`、显示名「ClipLite Dev」；发布脚本 `scripts/build-dmg.sh` 固定使用 `com.lianyi.cliplite`、产物在 `build/release/ClipLite.app`，默认 ad-hoc 签名，不读取本地 `SnapLite Dev` 身份。两版分别授权，互不影响。
+- **DistributedNotification 名称改为跟随 bundle id**：`com.lianyi.cliplite.dev.trigger`（开发版）/ `com.lianyi.cliplite.trigger`（发布版），避免两版实例互相触发。
+- **`build-dmg.sh`**：`set -euo pipefail`；`codesign --verify` 失败即中止；向 GitHub Actions 输出 `notarized` 标志，Release 说明按签名/公证状态区分措辞。
+
+---
+
 ## [0.1.1] - 2026-09-07
 
 首个内存治理版本。主线：「贴图后常驻 200MB」根治为主，顺带落地 Phase 2 全量代码审阅修复。
@@ -12,7 +28,7 @@
 - **标注窗关闭后整屏 backing store 不回收**：`AnnotationWindowController.windowWillClose` 设 `contentView=nil`，断开窗口→画布强引用，整屏 backing store（22MB@2x）随控制器 deinit 立即回收。footprint 从 46MB 降到 20MB。
 - **贴图关闭后 OCR 面板残留屏幕**：`PinWindowController.windowWillClose` 补 `ocrPanel?.orderOut(nil)`，关闭贴图时连带带走 OCR 面板（可见窗口会被 AppKit 隐式持有，不 orderOut 会永久残留）。
 - **热键存储改用原生 NSNumber 键**（旧版 JSON Data 回退兼容），避免 Codable 反序列化失败导致热键丢失。
-- **relaunch 改用 `NSWorkspace.shared.open`** 替代 `/bin/sh` 子进程拼接，更稳更省。
+- **relaunch 改用 `NSWorkspace.shared.open`** 替代 `/bin/sh` 子进程拼接，更稳更省。（后证实该方案「只退不开」，已在 [Unreleased] 中改回 shell watcher 等父 PID 退出。）
 - **`onTrigger` 未知/缺失 action 一律忽略**，不再默认触发截图。
 - **放大镜网格漏画的横向线补上**（之前只有竖线）。
 - **设置窗越层 Auto Layout 约束导致的崩溃**（点设置没反应的根因，前一版本遗留）。
