@@ -2,7 +2,7 @@ name: Release
 
 # 触发：推送 v* tag（或手动 dispatch）。
 # 产物：dist/ClipLite-<ver>.dmg。配置了 Developer ID + 公证 secrets 时，自动做
-#       Hardened Runtime 签名 + notarytool 公证 + staple；否则回退本地/自签构建。
+#       Hardened Runtime 签名 + notarytool 公证 + staple；否则默认 ad-hoc 构建。
 # 之后：创建 GitHub Release（附 DMG），并在配了 TAP_PAT 时自动更新 Homebrew tap。
 on:
   push:
@@ -64,6 +64,7 @@ jobs:
           echo "签名身份：$ID"
 
       - name: Build DMG (sign + notarize + staple)
+        id: package
         if: steps.skip.outputs.exists == 'false'
         run: bash scripts/build-dmg.sh
         env:
@@ -90,7 +91,7 @@ jobs:
           files: ${{ steps.info.outputs.dmg }}
           generate_release_notes: true
           body: |
-            ${{ env.CLIPLITE_SIGN_IDENTITY && 'Developer ID 签名 + Apple 公证（Gatekeeper 可直接打开）。' || '自签名未公证：首次打开请右键→打开。' }}
+            ${{ steps.package.outputs.notarized == '1' && 'Developer ID 签名 + Apple 公证（Gatekeeper 可直接打开）。' || (env.CLIPLITE_SIGN_IDENTITY && '已签名、未公证：首次打开可能需要在系统设置中允许。' || 'ad-hoc 签名、未公证：首次打开请右键→打开；升级后可能需要重新授权录屏，恢复步骤见 README。') }}
 
             DMG sha256：`${{ steps.info.outputs.sha }}`
 

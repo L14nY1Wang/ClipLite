@@ -17,7 +17,7 @@ brew install --cask cliplite
 
 到 [Releases](https://github.com/L14nY1Wang/ClipLite/releases) 下载 `ClipLite-<版本>.dmg`，打开后把 ClipLite 拖进 Applications。
 
-> 本版本为个人自签名、未做 Apple 公证。首次打开若被 Gatekeeper 拦截：在 App 上**右键 → 打开**，或在「终端」执行 `xattr -dr com.apple.quarantine /Applications/ClipLite.app`。
+> 本版本默认使用 ad-hoc 签名、未做 Apple 公证。首次打开若被 Gatekeeper 拦截：在 App 上**右键 → 打开**，或在「终端」执行 `xattr -dr com.apple.quarantine /Applications/ClipLite.app`。
 
 **从源码构建**见下方「构建与运行」。
 
@@ -36,12 +36,29 @@ brew install --cask cliplite
 - macOS **14.0** 或更高（使用 ScreenCaptureKit、Vision）。
 - 首次运行需在 **系统设置 → 隐私与安全性 → 录屏与系统录音** 中勾选 ClipLite（改 bundle id / 重签名后需重新授权一次）。
 
+## 升级后无法截图
+
+发布版目前默认使用 **ad-hoc 签名、未公证**。升级后代码指纹变化，或之前运行过使用同一 bundle id 的本地签名版本，都可能使旧录屏授权失效；设置里已勾选也可能需要重新授权。
+
+1. 从菜单栏选择「退出 ClipLite」。**v0.1.1 的「重启应用」菜单存在只退出、不重新打开的问题**，恢复时请手动退出、打开。
+2. 在终端执行下面的命令，仅重置发布版 ClipLite 的屏幕录制授权，不影响其他应用：
+
+   ```bash
+   tccutil reset ScreenCapture com.lianyi.cliplite
+   open /Applications/ClipLite.app
+   ```
+
+3. 在 **系统设置 → 隐私与安全性 → 录屏与系统录音** 中允许 ClipLite（也可从菜单栏「屏幕录制权限…」进入）。
+4. 授权后**完全退出 ClipLite，再手动打开 `/Applications/ClipLite.app`**，然后尝试截图。
+
+后续 ad-hoc 版本升级仍可能需要重新授权。不要用开发构建覆盖 `/Applications/ClipLite.app`；新版源码构建使用独立的 `com.lianyi.cliplite.dev` 身份和「ClipLite Dev」显示名，与发布版分别授权。两版默认热键相同，使用时请只运行其中一版。
+
 ## 构建与运行
 
 需要 Command Line Tools（`xcode-select --install`）或 Xcode，无需 `.xcodeproj`。
 
 ```bash
-make                # 编译 release + 组装 build/ClipLite.app（自动本地签名）
+make                # 编译 release 配置，组装开发版 build/ClipLite.app（ClipLite Dev）
 open build/ClipLite.app
 ```
 
@@ -50,23 +67,23 @@ open build/ClipLite.app
 ```bash
 make selftest       # 命令行自测：截屏 → 裁剪 → /tmp/cliplite-selftest.png → 打印内存
 make grant          # 直接打开「录屏与系统录音」授权页
-make reset-perm     # 清除本 App 的屏幕录制授权记录（授权错乱时用）
-make dmg            # 构建可分发 DMG（有 Developer ID/公证凭证则自动签名+公证+装订）
+make reset-perm     # 仅重置开发版 com.lianyi.cliplite.dev 的屏幕录制授权
+make dmg            # 发布版 build/release/ClipLite.app → dist/*.dmg；默认 ad-hoc
 make clean
 ```
 
 发布、Developer ID 签名与公证、GitHub Actions 及 Homebrew tap 的完整流程见 [docs/RELEASE.md](docs/RELEASE.md)。
 
-## 免「重复授权」（推荐，一次性）
+## 开发版减少「重复授权」（可选，一次性）
 
-macOS 的 ad-hoc 临时签名会在每次重编译后改变代码指纹，导致屏幕录制权限被反复要求重新授权。运行下面的脚本创建一个**稳定的本地签名身份**，之后授权可跨重编译保留：
+macOS 的 ad-hoc 临时签名会随代码变化改变指纹，可能需要重新授权。下面的脚本为**开发版**创建稳定的本地签名身份 `SnapLite Dev`，`make app` 会自动选用它；发布脚本不会读取该身份，仍默认使用 ad-hoc。需要 Developer ID 发布时显式设置 `CLIPLITE_SIGN_IDENTITY`，并另配公证凭证。签名或校验失败会中止构建。
 
 ```bash
 bash scripts/make-identity.sh        # 在你自己的「终端」里运行，按提示输入 Mac 登录密码
 make reset-perm && make app && open build/ClipLite.app
 ```
 
-首次签名若弹出「codesign 想要使用密钥 SnapLite Dev」，点 **始终允许**。此后改代码再 `make app` 不再要求重新授权。
+首次签名若弹出「codesign 想要使用密钥 SnapLite Dev」，点 **始终允许**。开发版首次需单独授权；保持同一签名身份后，通常可跨重编译保留授权。
 
 ## 快捷键
 

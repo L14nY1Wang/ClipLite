@@ -1,29 +1,28 @@
 #!/bin/bash
 # 构建可分发 DMG。产物：dist/ClipLite-<version>.dmg，并打印 sha256。
 #
-# 签名策略（自动选择）：
+# 签名策略（显式选择）：
 #   - 设了 CLIPLITE_SIGN_IDENTITY（形如 "Developer ID Application: 名字 (TEAMID)"）
 #       → 用该 Developer ID + Hardened Runtime + 时间戳签名（可公证）。
-#   - 否则回退本地稳定身份 "SnapLite Dev"，再退 ad-hoc（仅自测/自用）。
+#   - 否则固定使用 ad-hoc，不读取本地开发证书。
 # 公证（可选）：需 Developer ID 签名 + 下列任一凭证：
 #   A) App Store Connect API Key： APPLE_KEY_ID / APPLE_ISSUER_ID / APPLE_API_KEY_P8 (或 _B64)
 #   B) notarytool 已存钥匙串配置：  CLIPLITE_NOTARY_PROFILE=<profile 名>
 # 未配置凭证则跳过公证，仅本地/开发用。
-set -e
+set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VER="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)"
 BUNDLE_ID="com.lianyi.cliplite"
-APP="build/ClipLite.app"
+APP="build/release/ClipLite.app"
 ENT="Resources/ClipLite.entitlements"
 STAGE="build/dmg-staging"
 OUT="dist/ClipLite-${VER}.dmg"
 
 echo "1/4 编译 release（v${VER}）…"
-swift build -c release --product ClipLite
-
 echo "2/4 组装并签名 .app…"
-make app   # 复用 Makefile 组装：生成 icns、拷贝 ClipLiteMenuBar.svg、资源、PkgInfo，并完成本地签名
+# 发布身份与开发版隔离；即使本机有 SnapLite Dev，也只使用显式指定的签名。
+make app APP="$APP" BUNDLE_ID="$BUNDLE_ID" APP_NAME=ClipLite IDENTITY=-
 
 if [ -n "${CLIPLITE_SIGN_IDENTITY:-}" ]; then
   echo "  → Developer ID 签名（Hardened Runtime + 时间戳）：${CLIPLITE_SIGN_IDENTITY}"
@@ -31,9 +30,9 @@ if [ -n "${CLIPLITE_SIGN_IDENTITY:-}" ]; then
            --entitlements "$ENT" --sign "$CLIPLITE_SIGN_IDENTITY" \
            --identifier "$BUNDLE_ID" "$APP"
 else
-  echo "  → 沿用 make app 的本地/回退签名（未配置 Developer ID）"
+  echo "  → ad-hoc 签名（未配置 Developer ID）"
 fi
-codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -1 || true
+codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "3/4 打包 DMG…"
 rm -rf "$STAGE"; mkdir -p "$STAGE" dist
@@ -65,6 +64,10 @@ if [ "$NOTARIZED" = "1" ]; then
   echo "  ✔ 已公证并装订（stapled）"
 else
   echo "  ⚠ 跳过公证（未配置 Developer ID/凭证）。产物仍可本地使用。"
+fi
+
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  printf 'notarized=%s\n' "$NOTARIZED" >> "$GITHUB_OUTPUT"
 fi
 
 SHA="$(shasum -a 256 "$OUT" | awk '{print $1}')"
