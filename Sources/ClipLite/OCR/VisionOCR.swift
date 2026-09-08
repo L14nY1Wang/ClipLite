@@ -30,14 +30,45 @@ enum VisionOCR {
         let p = Process()
         p.executableURL = exe
         p.arguments = ["--ocr-worker", url.path]
-        let pipe = Pipe()
-        p.standardOutput = pipe
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        p.standardOutput = outPipe
+        p.standardError = errPipe
         try p.run()
-        p.waitUntilExit()
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard p.terminationStatus == 0 else { throw OCRError.workerFailed(status: Int(p.terminationStatus)) }
-        return (String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // 先并发排空管道再 waitUntilExit：子进程输出超过 64KB 管道缓冲时会写阻塞，
+        // 父进程若先 waitUntilExit 会在子进程阻塞写入时永久死锁。
+        let readQueue = DispatchQueue.global(qos: .userInitiated)
+        let outSemaphore = DispatchSemaphore(value: 0)
+        let errSemaphore = DispatchSemaphore(value: 0)
+        var outData = Data()
+        var errData = Data()
+        readQueue.async {
+            outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+            outSemaphore.signal()
+        }
+        readQueue.async {
+            errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            errSemaphore.signal()
+        }
+
+        // 超时保护：30 秒未退出则 terminate，避免子进程卡死导致父进程永久挂起。
+        let deadline = DispatchTime.now() + .seconds(30)
+        let timeout = DispatchWorkItem { [weak p] in
+            if p?.isRunning == true { p?.terminate() }
+        }
+        DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeout)
+
+        p.waitUntilExit()
+        timeout.cancel()
+        outSemaphore.wait()
+        errSemaphore.wait()
+
+        guard p.terminationStatus == 0 else {
+            let stderr = String(data: errData, encoding: .utf8) ?? ""
+            throw OCRError.workerFailed(status: Int(p.terminationStatus), stderr: stderr)
+        }
+        return (String(data: outData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 同步识别：供 `--ocr-worker` 子进程直接调用。
@@ -59,7 +90,19 @@ enum VisionOCR {
 enum OCRError: Error {
     case pngEncodeFailed
     case noExecutable
-    case workerFailed(status: Int)
+    case workerFailed(status: Int, stderr: String = "")
+}
+
+extension OCRError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .workerFailed(let status, let stderr):
+            return stderr.isEmpty ? "OCR 子进程异常退出（exit \(status)）"
+                                  : "OCR 子进程异常退出（exit \(status)）：\(stderr)"
+        default:
+            return nil  // 其余 case 维持系统默认描述，行为不变
+        }
+    }
 }
 
 /// 子进程入口：从 PNG 路径惰性加载 CGImage。
