@@ -123,16 +123,24 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         guard let img = canvas.renderFinal() else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "ClipLite-\(Int(Date().timeIntervalSince1970)).png"
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd HH-mm-ss"
+        panel.nameFieldStringValue = "ClipLite \(fmt.string(from: Date())).png"
+        panel.directoryURL = AppSettings.shared.lastSaveDirectory
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let rep = NSBitmapImageRep(cgImage: img)
-        if let png = rep.representation(using: .png, properties: [:]) {
-            do {
-                try png.write(to: url)
-            } catch {
-                NSLog("ClipLite: 保存 PNG 失败 \(url.path): \(error)")
-            }
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        do {
+            try png.write(to: url)
+        } catch {
+            NSLog("ClipLite: 保存 PNG 失败 \(url.path): \(error)")
+            let alert = NSAlert()
+            alert.messageText = "保存失败"
+            alert.informativeText = "无法写入 \(url.path)：\(error.localizedDescription)"
+            alert.runModal()
+            return  // 不关窗，用户可重试
         }
+        AppSettings.shared.lastSaveDirectory = url.deletingLastPathComponent()
         close()
     }
 
