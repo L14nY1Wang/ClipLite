@@ -124,6 +124,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateFormat = "yyyy-MM-dd HH-mm-ss"
         panel.nameFieldStringValue = "ClipLite \(fmt.string(from: Date())).png"
         panel.directoryURL = AppSettings.shared.lastSaveDirectory
