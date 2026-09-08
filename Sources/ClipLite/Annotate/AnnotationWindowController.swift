@@ -53,8 +53,6 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         repositionToolbar()
     }
 
-    deinit { NSLog("ClipLite[mem] AnnotationWindowController deinit") }
-
     func windowWillClose(_ notification: Notification) {
         toolbar.orderOut(nil)
         sizeBar.orderOut(nil)

@@ -20,6 +20,10 @@ jobs:
         with: { fetch-depth: 2 }
       - name: Build
         run: swift build -c release
+      - name: 验证发布二进制不含诊断代码
+        run: |
+          swift build -c release -Xswiftc -DRELEASE_BUILD
+          ! strings .build/release/ClipLite | grep -qE 'MEMSTEP|SELFTEST|ClipLite\[mem\]'
       - name: Lint scripts
         run: bash -n scripts/*.sh
       - name: Whitespace check

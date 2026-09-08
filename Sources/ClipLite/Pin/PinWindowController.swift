@@ -43,8 +43,6 @@ final class PinWindowController: NSObject, NSWindowDelegate {
 
     func show() { panel.orderFrontRegardless() }
 
-    deinit { NSLog("ClipLite[mem] PinWindowController deinit") }
-
     func windowWillClose(_ notification: Notification) {
         // 贴图关闭时连带带走 OCR 面板：可见窗口会被 AppKit 隐式持有，不 orderOut 会永久残留在屏幕上
         ocrPanel?.orderOut(nil)

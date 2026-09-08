@@ -46,7 +46,6 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError() }
-    deinit { NSLog("ClipLite[mem] AnnotationCanvas deinit baseImage=\(baseImage.width)x\(baseImage.height)") }
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
