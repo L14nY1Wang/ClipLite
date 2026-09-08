@@ -8,7 +8,7 @@ final class SelectionController {
 
     func start() {
         guard ScreenCapture.preflight() || ScreenCapture.request() else {
-            showFailure("需要屏幕录制权限", detail: "请在系统设置的「录屏与系统录音」中允许本应用。授权后请完全退出并重新打开，再尝试截图。若升级后仍无法截图，请按 README 的升级恢复步骤重置本应用权限。")
+            showFailure("需要屏幕录制权限", detail: "请在系统设置的「录屏与系统录音」中允许本应用。授权后将自动重试截图。若升级后仍无法截图，请按 README 的升级恢复步骤重置本应用权限。")
             return
         }
         Task { [weak self] in
@@ -39,6 +39,8 @@ final class SelectionController {
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             coordinator?.openScreenCapturePrefs()
+            // 用户在系统设置完成授权后当场重试截图（defer 的 didCancelSelection 已先复位 selection）
+            coordinator?.startPermissionRetry()
         }
     }
 
