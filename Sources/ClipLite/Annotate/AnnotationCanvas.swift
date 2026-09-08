@@ -176,16 +176,33 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             } else {
                 super.keyDown(with: event)
             }
-        case 53:                       // Esc：有选中时先清除选中，否则维持"应用并结束"
+        case 53:                       // Esc：有选中先清除；否则放弃标注并关闭（不渲染、不写剪贴板，同工具条取消按钮）
             if selectedID != nil { selectedID = nil; needsDisplay = true; return }
-            commitTextEditorIfNeeded()
-            windowController?.copyAndClose()
+            windowController?.close()
         case 36, 76:                   // Return / KeypadReturn：应用标注后复制并结束
             commitTextEditorIfNeeded()
             windowController?.copyAndClose()
         default:
             super.keyDown(with: event)
         }
+    }
+
+    /// 编辑文字时 Esc 不走 keyDown（field editor 截获），以 cancelOperation: 沿响应链转发到这里。
+    override func cancelOperation(_ sender: Any?) {
+        guard textEditor != nil else { super.cancelOperation(sender); return }
+        cancelTextEditor()
+    }
+
+    /// 取消文字编辑：新文字直接丢弃；再编辑则恢复原元素并回滚 editText 压入的 undo 快照。
+    private func cancelTextEditor() {
+        guard let editor = textEditor else { return }
+        if let editing = editingItem {
+            items.insert(editing.item, at: min(editing.index, items.count))
+            editingItem = nil
+            undoStack.removeLast()
+        }
+        editor.removeFromSuperview(); textEditor = nil
+        window?.makeFirstResponder(self); needsDisplay = true
     }
 
     // MARK: - 选取框几何
