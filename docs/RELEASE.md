@@ -27,6 +27,8 @@ ClipLite 从「自签名」升级到「Apple Developer ID 签名 + 公证」后�
 
 ## 2. 发布流程（自动）
 
+打 tag 前必须确认 `Resources/Info.plist` 的 `CFBundleShortVersionString` 与 tag 版本号一致（CI 的 Validate version 步骤会自动校验，不一致直接失败）。
+
 打 tag 即触发 `.github/workflows/release.yml`：
 ```bash
 # 先改 Resources/Info.plist 的 CFBundleShortVersionString，例如 0.1.1

@@ -13,6 +13,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VER="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)"
+# 发布流程会传 EXPECTED_VERSION（来自 tag）；本地 make dmg 不设则跳过校验。
+if [ -n "${EXPECTED_VERSION:-}" ] && [ "$VER" != "$EXPECTED_VERSION" ]; then
+  echo "错误：Info.plist 版本 ${VER} 与预期 ${EXPECTED_VERSION} 不一致" >&2
+  exit 1
+fi
 BUNDLE_ID="com.lianyi.cliplite"
 APP="build/release/ClipLite.app"
 ENT="Resources/ClipLite.entitlements"
@@ -68,6 +73,7 @@ fi
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   printf 'notarized=%s\n' "$NOTARIZED" >> "$GITHUB_OUTPUT"
+  printf 'dmg_path=%s\n' "$OUT" >> "$GITHUB_OUTPUT"
 fi
 
 SHA="$(shasum -a 256 "$OUT" | awk '{print $1}')"

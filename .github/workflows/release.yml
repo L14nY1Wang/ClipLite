@@ -42,6 +42,18 @@ jobs:
             echo exists=false >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate version
+        if: steps.skip.outputs.exists == 'false'
+        run: |
+          TAG_VER="${{ steps.ver.outputs.tag }}"
+          TAG_VER="${TAG_VER#v}"
+          PLIST_VER="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)"
+          if [ "$TAG_VER" != "$PLIST_VER" ]; then
+            echo "::error::tag 版本 ${TAG_VER} 与 Info.plist 的 ${PLIST_VER} 不一致"
+            exit 1
+          fi
+          echo "EXPECTED_VERSION=$TAG_VER" >> "$GITHUB_ENV"
+
       - name: Set up signing keychain
         if: steps.skip.outputs.exists == 'false' && env.HAS_DEV_ID_CERT == 'true'
         env:
@@ -77,7 +89,8 @@ jobs:
         if: steps.skip.outputs.exists == 'false'
         id: info
         run: |
-          DMG="$(ls dist/*.dmg | head -1)"
+          DMG="${{ steps.package.outputs.dmg_path }}"
+          if [ -z "$DMG" ] || [ ! -f "$DMG" ]; then DMG="$(ls dist/*.dmg | head -1)"; fi
           echo "dmg=$DMG" >> "$GITHUB_OUTPUT"
           echo "sha=$(shasum -a 256 "$DMG" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
