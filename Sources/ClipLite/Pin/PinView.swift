@@ -20,7 +20,6 @@ final class PinView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
-    deinit { NSLog("ClipLite[mem] PinView deinit cgImage=\(cgImage.width)x\(cgImage.height)") }
 
     override var isFlipped: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }

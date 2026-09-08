@@ -8,8 +8,9 @@ APP_NAME  ?= ClipLite Dev
 
 all: app
 
+# dev 构建不传 SWIFT_FLAGS（保留诊断代码）；发布构建传 SWIFT_FLAGS="-Xswiftc -DRELEASE_BUILD" 剥离
 build:
-	swift build -c release --product ClipLite
+	swift build -c release --product ClipLite $(SWIFT_FLAGS)
 
 # 优先使用稳定的本地签名身份（存在则授权可跨重编译保留），否则回退 ad-hoc
 IDENTITY  ?= $(shell security find-identity -v -p codesigning ~/Library/Keychains/login.keychain-db 2>/dev/null | grep -m1 '"SnapLite Dev"' | sed -E 's/.*"([^"]+)".*/\1/')

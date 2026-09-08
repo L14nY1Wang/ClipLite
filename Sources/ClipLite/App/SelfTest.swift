@@ -1,3 +1,4 @@
+#if !RELEASE_BUILD
 import AppKit
 
 /// 命令行自测：截屏 → 裁剪中心区域 → 写 PNG → 打印内存占用。
@@ -58,3 +59,4 @@ enum SelfTest {
         return UInt64(s) ?? 0
     }
 }
+#endif

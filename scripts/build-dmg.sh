@@ -22,7 +22,7 @@ OUT="dist/ClipLite-${VER}.dmg"
 echo "1/4 编译 release（v${VER}）…"
 echo "2/4 组装并签名 .app…"
 # 发布身份与开发版隔离；即使本机有 SnapLite Dev，也只使用显式指定的签名。
-make app APP="$APP" BUNDLE_ID="$BUNDLE_ID" APP_NAME=ClipLite IDENTITY=-
+make app APP="$APP" BUNDLE_ID="$BUNDLE_ID" APP_NAME=ClipLite IDENTITY=- SWIFT_FLAGS="-Xswiftc -DRELEASE_BUILD"
 
 if [ -n "${CLIPLITE_SIGN_IDENTITY:-}" ]; then
   echo "  → Developer ID 签名（Hardened Runtime + 时间戳）：${CLIPLITE_SIGN_IDENTITY}"

@@ -19,6 +19,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--ocr-worker"), i + 1 < Command
     exit(1)
 }
 
+#if !RELEASE_BUILD
 // 自测模式：截屏 → 裁剪中心区域 → 写 PNG → 打印内存，用于命令行验证
 if CommandLine.arguments.contains("--selftest") {
     SelfTest.run()
@@ -30,6 +31,7 @@ if CommandLine.arguments.contains("--memtest") {
     MemTest.run()
     exit(0)
 }
+#endif
 
 // 自动化触发：向运行中的实例发通知执行动作（capture / pin / settings）。无需任何系统权限。
 let args = CommandLine.arguments

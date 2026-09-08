@@ -1,3 +1,4 @@
+#if !RELEASE_BUILD
 import AppKit
 
 /// 内存诊断 harness（--memtest）：真实走 截图→标注→贴图→关闭 全链路，逐步打印
@@ -256,3 +257,4 @@ final class Harness: NSObject, NSApplicationDelegate {
         }
     }
 }
+#endif
