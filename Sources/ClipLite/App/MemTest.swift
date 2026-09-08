@@ -204,9 +204,9 @@ final class Harness: NSObject, NSApplicationDelegate {
     }
 
     static func centerFrame(w: Int, h: Int) -> NSRect {
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        let sizePt = NSSize(width: CGFloat(w) / scale, height: CGFloat(h) / scale)
         let pt = NSEvent.mouseLocation
+        let scale = NSScreen.backingScaleFactor(at: pt)
+        let sizePt = NSSize(width: CGFloat(w) / scale, height: CGFloat(h) / scale)
         return NSRect(x: pt.x - sizePt.width / 2, y: pt.y - sizePt.height / 2,
                       width: sizePt.width, height: sizePt.height)
     }

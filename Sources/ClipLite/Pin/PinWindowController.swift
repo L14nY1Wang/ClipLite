@@ -29,7 +29,7 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     init(image: CGImage, frame: NSRect) {
         var f = frame
         if f.width <= 0 || f.height <= 0 {
-            let scale = NSScreen.main?.backingScaleFactor ?? 2
+            let scale = NSScreen.backingScaleFactor(at: NSPoint(x: f.midX, y: f.midY))
             f.size = NSSize(width: CGFloat(image.width) / scale,
                             height: CGFloat(image.height) / scale)
         }
