@@ -54,11 +54,13 @@ enum VisionOCR {
 
         // 超时保护：30 秒未退出则 terminate，避免子进程卡死导致父进程永久挂起。
         let deadline = DispatchTime.now() + .seconds(30)
-        DispatchQueue.global().asyncAfter(deadline: deadline) { [weak p] in
+        let timeout = DispatchWorkItem { [weak p] in
             if p?.isRunning == true { p?.terminate() }
         }
+        DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeout)
 
         p.waitUntilExit()
+        timeout.cancel()
         outSemaphore.wait()
         errSemaphore.wait()
 
@@ -89,6 +91,18 @@ enum OCRError: Error {
     case pngEncodeFailed
     case noExecutable
     case workerFailed(status: Int, stderr: String = "")
+}
+
+extension OCRError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .workerFailed(let status, let stderr):
+            return stderr.isEmpty ? "OCR 子进程异常退出（exit \(status)）"
+                                  : "OCR 子进程异常退出（exit \(status)）：\(stderr)"
+        default:
+            return nil  // 其余 case 维持系统默认描述，行为不变
+        }
+    }
 }
 
 /// 子进程入口：从 PNG 路径惰性加载 CGImage。
