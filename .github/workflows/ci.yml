@@ -8,6 +8,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-14
@@ -17,6 +21,6 @@ jobs:
       - name: Build
         run: swift build -c release
       - name: Lint scripts
-        run: bash -n scripts/build-dmg.sh
+        run: bash -n scripts/*.sh
       - name: Whitespace check
         run: git diff --check HEAD~1 HEAD  # 检本次变更（PR 时为 merge 提交，覆盖全部改动）；fetch-depth<2 的孤立提交会跳过
