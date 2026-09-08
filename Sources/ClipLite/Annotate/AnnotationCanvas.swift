@@ -133,6 +133,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             if off.x != 0 || off.y != 0 {
                 if !moveUndoPushed { pushUndo(); moveUndoPushed = true }   // 首次位移才压栈
                 items[idx] = items[idx].moved(by: off)
+                // 马赛克源图绑定原位置像素，移动后失效——按新位置重建（复用 buildMosaic）
+                if items[idx].kind == .mosaic, let m = buildMosaic(items[idx].rect) { items[idx].mosaicSource = m }
                 dragAnchor = p
                 needsDisplay = true
             }
@@ -170,7 +172,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         switch Int(event.keyCode) {
         case 51, 117:                  // Delete / ForwardDelete：删除选中元素
             if let sid = selectedID, let idx = items.firstIndex(where: { $0.id == sid }) {
-                pushUndo(); items.remove(at: idx); selectedID = nil; needsDisplay = true
+                pushUndo(); items.remove(at: idx); selectedID = nil; rebuildNextNumber(); needsDisplay = true
             } else {
                 super.keyDown(with: event)
             }
@@ -279,6 +281,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 editing.item.rect = NSRect(origin: origin, size: .zero)
                 items.insert(editing.item, at: min(editing.index, items.count))
             }
+            rebuildNextNumber()   // 空文字删除路径同样重算序号
         } else if !str.isEmpty {
             pushUndo()
             items.append(AnnotationItem(kind: .text, color: currentColor, lineWidth: lineWidth,
@@ -295,11 +298,16 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     func undo() {
-        guard textEditor == nil, let snap = undoStack.popLast() else { return }
+        commitTextEditorIfNeeded()   // 编辑中按 undo：先提交再弹栈，净效果 = 丢弃本次编辑
+        guard let snap = undoStack.popLast() else { return }
         items = snap
-        nextNumber = (items.filter { $0.kind == .number }.map { $0.number }.max() ?? 0) + 1
+        rebuildNextNumber()
         if let sid = selectedID, !items.contains(where: { $0.id == sid }) { selectedID = nil }
         needsDisplay = true
+    }
+
+    private func rebuildNextNumber() {
+        nextNumber = (items.filter { $0.kind == .number }.map { $0.number }.max() ?? 0) + 1
     }
 
     // MARK: - 绘制
@@ -343,6 +351,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             box.lineWidth = 1.5
             box.setLineDash([4, 3], count: 2, phase: 0)
             box.stroke()
+            box.setLineDash([], count: 0, phase: 0)   // 复位虚线，避免状态泄漏给后续绘制
         }
 
         drawSizeLabel(sel)
@@ -354,6 +363,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     // MARK: - 合成输出（按选取框裁剪）
     func renderFinal() -> CGImage? {
+        commitTextEditorIfNeeded()   // 编辑中的文字先归位 items，否则 save/pin/ocr 丢元素
         let px = pixelRect(of: selection)
         guard px.width >= 1, px.height >= 1,
               let crop = baseImage.cropping(to: px),
