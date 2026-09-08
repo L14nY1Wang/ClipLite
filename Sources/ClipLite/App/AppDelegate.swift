@@ -111,9 +111,9 @@ final class AppCoordinator: NSObject {
     // MARK: - 贴图
     @objc func pinClipboard() {
         guard let img = Clipboard.readImage() else { return }
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        let sizePt = NSSize(width: CGFloat(img.width) / scale, height: CGFloat(img.height) / scale)
         let pt = NSEvent.mouseLocation
+        let scale = NSScreen.backingScaleFactor(at: pt)
+        let sizePt = NSSize(width: CGFloat(img.width) / scale, height: CGFloat(img.height) / scale)
         let frame = NSRect(x: pt.x - sizePt.width / 2,
                            y: pt.y - sizePt.height / 2,
                            width: sizePt.width, height: sizePt.height)

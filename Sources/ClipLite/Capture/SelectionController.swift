@@ -97,7 +97,8 @@ final class SelectionController {
             return []
         }
         let myPID = getpid()
-        let mainH = CGFloat(CGDisplayPixelsHigh(CGMainDisplayID()))
+        // kCGWindowBounds 是 CG 全局「点」：翻转锚点必须用主屏点高度（PixelsHigh 在 HiDPI 下返回物理像素，会把矩形翻出屏幕）
+        let mainH = CGDisplayBounds(CGMainDisplayID()).height
         var rects: [NSRect] = []
         for w in arr {
             guard (w[kCGWindowLayer as String] as? Int) == 0,

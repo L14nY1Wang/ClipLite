@@ -59,3 +59,10 @@ enum ScreenCapture {
         }
     }
 }
+
+extension NSScreen {
+    /// 混合 DPI：按 point（AppKit 全局点坐标）所在屏取缩放比，而非假定主屏。
+    static func backingScaleFactor(at point: NSPoint) -> CGFloat {
+        screens.first { $0.frame.contains(point) }?.backingScaleFactor ?? main?.backingScaleFactor ?? 2
+    }
+}
