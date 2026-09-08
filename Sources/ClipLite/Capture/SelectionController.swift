@@ -8,7 +8,7 @@ final class SelectionController {
 
     func start() {
         guard ScreenCapture.preflight() || ScreenCapture.request() else {
-            showFailure("需要屏幕录制权限", detail: "请在系统设置的「录屏与系统录音」中允许本应用。授权后将自动重试截图。若升级后仍无法截图，请按 README 的升级恢复步骤重置本应用权限。")
+            showFailure("需要屏幕录制权限", detail: "请在系统设置的「录屏与系统录音」中允许本应用。授权后将自动重试截图。若升级后仍无法截图，请按 README 的升级恢复步骤重置本应用权限。", isPermissionIssue: true)
             return
         }
         Task { [weak self] in
@@ -22,13 +22,14 @@ final class SelectionController {
             } catch {
                 NSLog("SelectionController: capture failed \(error)")
                 await MainActor.run {
-                    self.showFailure("截图失败", detail: "\(error.localizedDescription)\n\n请检查屏幕录制权限后重试；若刚修改授权，请完全退出并重新打开应用。")
+                    self.showFailure("截图失败", detail: "\(error.localizedDescription)\n\n请检查屏幕录制权限后重试。")
                 }
             }
         }
     }
 
-    private func showFailure(_ title: String, detail: String) {
+    /// - Parameter isPermissionIssue: 仅 preflight 授权失败时为 true，才挂授权自动重试；capture 报错时权限通常已正常，重试大概率命中同一错误。
+    private func showFailure(_ title: String, detail: String, isPermissionIssue: Bool = false) {
         // 弹窗期间保留会话，避免热键重复创建弹窗；关闭后释放，允许重试。
         defer { coordinator?.didCancelSelection() }
         let alert = NSAlert()
@@ -39,8 +40,10 @@ final class SelectionController {
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             coordinator?.openScreenCapturePrefs()
-            // 用户在系统设置完成授权后当场重试截图（defer 的 didCancelSelection 已先复位 selection）
-            coordinator?.startPermissionRetry()
+            if isPermissionIssue {
+                // 用户在系统设置完成授权后当场重试截图（defer 的 didCancelSelection 已先复位 selection）
+                coordinator?.startPermissionRetry()
+            }
         }
     }
 
