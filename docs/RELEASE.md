@@ -23,7 +23,7 @@ ClipLite 从「自签名」升级到「Apple Developer ID 签名 + 公证」后�
 | `APPLE_API_KEY_B64` | `base64 -i AuthKey_XXXX.p8` 的输出 |
 | `TAP_PAT` | 可写 `homebrew-cliplite` 的 PAT（自动更新 tap 用；不配则跳过） |
 
-> 不配这些也能发布：CI 会回退到「自签名、未公证」产物。
+> 不配这些也能发布：本地和 CI 均默认使用 ad-hoc、未公证签名，不会自动选用 SnapLite Dev。发布版为 `com.lianyi.cliplite`，产物在 `build/release/ClipLite.app`；`make app` 的开发版为 `com.lianyi.cliplite.dev`（ClipLite Dev）。签名或严格校验失败会中止发布。升级后的录屏授权恢复见 [README](../README.md#升级后无法截图)。
 
 ## 2. 发布流程（自动）
 
@@ -32,7 +32,7 @@ ClipLite 从「自签名」升级到「Apple Developer ID 签名 + 公证」后�
 # 先改 Resources/Info.plist 的 CFBundleShortVersionString，例如 0.1.1
 git commit -am "release: 0.1.1" && git tag v0.1.1 && git push origin main v0.1.1
 ```
-CI 会：建临时钥匙串→导入 Developer ID 证书→以 **Hardened Runtime + 时间戳**签名 `.app`→打 DMG→`notarytool` 提交并 `--wait`→`stapler staple`→创建 Release（附公证后的 DMG）→更新 Homebrew tap。
+配置了证书和公证凭证时，CI 会：建临时钥匙串→导入 Developer ID 证书→以 **Hardened Runtime + 时间戳**签名 `.app`→打 DMG→`notarytool` 提交并 `--wait`→`stapler staple`→创建 Release（附公证后的 DMG）→更新 Homebrew tap。
 
 ## 3. 本地发布（可选，有证书时）
 
@@ -45,9 +45,11 @@ make dmg         # 自动完成签名 + 公证 + 装订，并打印 sha256
 ## 4. 校验产物
 
 ```bash
-codesign -dvv2 dist/ClipLite-0.1.0.dmg 2>&1 | head        # 看 Authority=Developer ID Application
-spctl -a -vv --type open "build/ClipLite.app"              # 应 accepted（源签名有效）
-xcrun stapler validate dist/ClipLite-0.1.0.dmg             # 装订票据 OK
+codesign -dvv2 build/release/ClipLite.app                 # 看 Signature=adhoc 或显式指定的 Authority
+codesign --verify --deep --strict build/release/ClipLite.app
+# 以下仅适用于 Developer ID + 公证产物：
+spctl -a -vv --type execute build/release/ClipLite.app
+xcrun stapler validate dist/ClipLite-0.1.1.dmg             # 装订票据 OK
 xcrun notarytool history --key-id "$APPLE_KEY_ID" --issuer "$APPLE_ISSUER_ID" --key ~/AuthKey.p8
 ```
 

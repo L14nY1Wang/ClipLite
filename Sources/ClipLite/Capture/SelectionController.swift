@@ -7,9 +7,8 @@ final class SelectionController {
     private var windows: [SelectionWindow] = []
 
     func start() {
-        guard ScreenCapture.preflight() else {
-            _ = ScreenCapture.request()
-            coordinator?.didCancelSelection()
+        guard ScreenCapture.preflight() || ScreenCapture.request() else {
+            showFailure("需要屏幕录制权限", detail: "请在系统设置的「录屏与系统录音」中允许本应用。授权后请完全退出并重新打开，再尝试截图。若升级后仍无法截图，请按 README 的升级恢复步骤重置本应用权限。")
             return
         }
         Task { [weak self] in
@@ -22,14 +21,30 @@ final class SelectionController {
                 }
             } catch {
                 NSLog("SelectionController: capture failed \(error)")
-                await MainActor.run { self.coordinator?.didCancelSelection() }
+                await MainActor.run {
+                    self.showFailure("截图失败", detail: "\(error.localizedDescription)\n\n请检查屏幕录制权限后重试；若刚修改授权，请完全退出并重新打开应用。")
+                }
             }
+        }
+    }
+
+    private func showFailure(_ title: String, detail: String) {
+        // 弹窗期间保留会话，避免热键重复创建弹窗；关闭后释放，允许重试。
+        defer { coordinator?.didCancelSelection() }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: "打开录屏设置")
+        alert.addButton(withTitle: "取消")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            coordinator?.openScreenCapturePrefs()
         }
     }
 
     private func present(displays: [ScreenCapture.Display], windowList: [NSRect]) {
         guard !displays.isEmpty else {
-            coordinator?.didCancelSelection()
+            showFailure("截图失败", detail: "没有找到可截图的显示器。请检查屏幕录制权限和显示器连接后重试。")
             return
         }
         NSCursor.crosshair.push()

@@ -44,7 +44,7 @@ final class AppCoordinator: NSObject {
         // 自动化接口：`ClipLite --trigger-capture`（供脚本/测试调用）
         DistributedNotificationCenter.default().addObserver(self,
                                                             selector: #selector(onTrigger(_:)),
-                                                            name: .init("com.lianyi.cliplite.trigger"),
+                                                            name: .init("\(Bundle.main.bundleIdentifier ?? "com.lianyi.cliplite.dev").trigger"),
                                                             object: nil)
 
         // 调试：启动即打开设置窗（`open ClipLite.app --args --open-settings`）
@@ -132,12 +132,22 @@ final class AppCoordinator: NSObject {
     }
 
     @objc func relaunch() {
-        // 先异步 1s 再退：open 需要当前进程仍在会话中才能正确拉起
-        let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            NSWorkspace.shared.open(bundleURL)
+        // 独立进程在本应用退出后打开 bundle；路径作为参数传递，避免 shell 插值。
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "while kill -0 \"$2\" 2>/dev/null; do sleep 0.1; done; exec /usr/bin/open \"$1\"",
+                          "cliplite-relaunch", Bundle.main.bundlePath,
+                          String(ProcessInfo.processInfo.processIdentifier)]
+        do {
+            try task.run()
+            NSApp.terminate(nil)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "无法重启应用"
+            alert.informativeText = "\(error.localizedDescription)\n\n请退出后手动重新打开 ClipLite。"
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
         }
-        NSApp.terminate(nil)
     }
 
     @objc func quit() {

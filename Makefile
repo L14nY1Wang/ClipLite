@@ -1,7 +1,8 @@
-APP      := build/ClipLite.app
+APP      ?= build/ClipLite.app
 BINARY   := .build/release/ClipLite
 PLIST    := Resources/Info.plist
-BUNDLE_ID := com.lianyi.cliplite
+BUNDLE_ID ?= com.lianyi.cliplite.dev
+APP_NAME  ?= ClipLite Dev
 
 .PHONY: all build app run clean selftest sign dmg
 
@@ -27,8 +28,12 @@ app: build
 	@cp Resources/ClipLiteMenuBar.svg "$(APP)/Contents/Resources/ClipLiteMenuBar.svg"
 	@cp "$(BINARY)" "$(APP)/Contents/MacOS/ClipLite"
 	@cp "$(PLIST)" "$(APP)/Contents/Info.plist"
+	@/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier $(BUNDLE_ID)' "$(APP)/Contents/Info.plist"
+	@/usr/libexec/PlistBuddy -c 'Set :CFBundleName $(APP_NAME)' "$(APP)/Contents/Info.plist"
+	@/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName $(APP_NAME)' "$(APP)/Contents/Info.plist"
 	@printf 'APPL????' > "$(APP)/Contents/PkgInfo"
-	@codesign --force --deep --sign "$(SIGN)" --identifier "$(BUNDLE_ID)" "$(APP)" 2>/dev/null || true
+	@codesign --force --deep --sign "$(SIGN)" --identifier "$(BUNDLE_ID)" "$(APP)"
+	@codesign --verify --deep --strict "$(APP)"
 	@echo "✔ 构建完成：$(APP)  [签名: $(if $(IDENTITY),$(IDENTITY),ad-hoc 临时——如需免重复授权请运行 scripts/make-identity.sh)]"
 
 run: app
