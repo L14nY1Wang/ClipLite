@@ -79,6 +79,7 @@ final class AppCoordinator: NSObject {
 
     // MARK: - 截图
     @objc func startCapture() {
+        stopPermissionRetry() // 用户手动触发新截图时取消 pending 的授权重试
         guard selection == nil else { return } // 已有进行中的会话则忽略
         let sel = SelectionController()
         sel.coordinator = self
@@ -97,6 +98,49 @@ final class AppCoordinator: NSObject {
 
     func didCancelSelection() {
         selection = nil
+    }
+
+    // MARK: - 录屏授权重试（macOS 14 授权即时生效，无需重启应用）
+    private var permissionRetryTimer: Timer?
+    private var permissionRetryObserver: NSObjectProtocol?
+    private var isWaitingForPermission = false
+
+    /// 用户去系统设置授权后轮询 preflight，一旦授权当场重试截图；5 分钟未授权则放弃。
+    func startPermissionRetry() {
+        stopPermissionRetry()
+        isWaitingForPermission = true
+        let deadline = Date().addingTimeInterval(300)
+        permissionRetryTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkPermissionRetry(deadline: deadline)
+        }
+        // 加速器：从系统设置切回本应用的瞬间立即查一次，不等下一轮轮询
+        permissionRetryObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.checkPermissionRetry(deadline: deadline)
+        }
+    }
+
+    func stopPermissionRetry() {
+        permissionRetryTimer?.invalidate()
+        permissionRetryTimer = nil
+        if let ob = permissionRetryObserver {
+            NotificationCenter.default.removeObserver(ob)
+            permissionRetryObserver = nil
+        }
+        isWaitingForPermission = false
+    }
+
+    private func checkPermissionRetry(deadline: Date) {
+        guard isWaitingForPermission else { return }
+        if Date() >= deadline {
+            stopPermissionRetry()
+            return
+        }
+        guard ScreenCapture.preflight() else { return }
+        stopPermissionRetry()
+        // 异步执行：等 showFailure 的 defer（didCancelSelection 置空 selection）先跑完，startCapture 的 guard 才放行
+        DispatchQueue.main.async { [weak self] in self?.startCapture() }
     }
 
     func annotationDidClose() {
