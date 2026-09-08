@@ -21,7 +21,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var scaleY: CGFloat = 1
 
     // 交互状态
-    private enum Mode { case none, draw, move, resize(Handle) }
+    private enum Mode { case none, draw, move, resize(Handle), itemMove(UUID) }
     // 按方位命名：n=上, s=下, e=右, w=左（含四角 ne/nw/se/sw）
     private enum Handle: Hashable { case n, s, e, w, ne, nw, se, sw }
     private var mode: Mode = .none
@@ -31,6 +31,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var draft: AnnotationItem?
     private var textEditor: NSTextField?
     private var nextNumber: Int = 1     // 序号标记自增
+
+    // 元素二次编辑（select 工具）
+    var selectedID: UUID?               // 当前选中元素（internal：控制器切换工具时清除）
+    private var undoStack: [[AnnotationItem]] = []
+    private var moveUndoPushed = false  // itemMove 首次真实位移才压栈，纯点选不产生空 undo
+    private var editingItem: (index: Int, item: AnnotationItem)?  // 文字再编辑：暂存的原元素
 
     private let handleSize: CGFloat = 11
     private let borderBand: CGFloat = 6
@@ -55,6 +61,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     override func mouseDown(with event: NSEvent) {
         commitTextEditorIfNeeded()
         let p = convert(event.locationInWindow, from: nil)
+        if currentTool == .select {
+            selectMouseDown(p, double: event.clickCount >= 2)
+            return
+        }
         if let h = handleAt(p) {
             mode = .resize(h); startSel = selection; needsDisplay = true; return
         }
@@ -64,6 +74,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         if selection.contains(p) {
             if currentTool == .text { beginText(at: p); return }
             if currentTool == .number {
+                pushUndo()
                 items.append(AnnotationItem(kind: .number, color: currentColor, lineWidth: lineWidth,
                                             rect: NSRect(origin: p, size: .zero),
                                             number: nextNumber, badgeRadius: badgeRadius))
@@ -77,6 +88,24 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         }
         // 框外按下：不响应（已有可拖拽的蓝框负责调整选区，避免与直接框选冲突）
         mode = .none
+    }
+
+    // MARK: - 选择工具
+    private func hitTestItem(at p: NSPoint) -> AnnotationItem? {
+        items.reversed().first { $0.boundingBox.contains(p) }   // 后画的在上层，优先命中
+    }
+
+    private func selectMouseDown(_ p: NSPoint, double: Bool) {
+        guard selection.contains(p), let hit = hitTestItem(at: p) else {
+            selectedID = nil; mode = .none; needsDisplay = true; return
+        }
+        if double, hit.kind == .text {
+            selectedID = nil; editText(item: hit); needsDisplay = true; return
+        }
+        selectedID = hit.id
+        moveUndoPushed = false
+        mode = .itemMove(hit.id); dragAnchor = p
+        needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -95,9 +124,21 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             case .pen: d.points.append(p)
             case .rect, .ellipse, .mosaic: d.rect = normalizeRect(s, p)
             case .arrow: d.points = [s, p]
-            case .text, .number: break
+            case .text, .number, .select: break
             }
             draft = d; needsDisplay = true
+        case let .itemMove(id):
+            guard let idx = items.firstIndex(where: { $0.id == id }) else { break }
+            let off = NSPoint(x: p.x - dragAnchor.x, y: p.y - dragAnchor.y)
+            if off.x != 0 || off.y != 0 {
+                if !moveUndoPushed { pushUndo(); moveUndoPushed = true }   // 首次位移才压栈
+                items[idx] = items[idx].moved(by: off)
+                // 马赛克源图绑定原位置像素，移动后失效——按新位置重建（复用 buildMosaic）
+                if items[idx].kind == .mosaic, let m = buildMosaic(items[idx].rect) { items[idx].mosaicSource = m }
+                dragAnchor = p
+                needsDisplay = true
+            }
+            // 不 clamp：移出选区会被裁剪，用户可感知（几何 clamp 复杂，暂不做）
         case .none: break
         }
     }
@@ -107,25 +148,39 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         switch mode {
         case .draw:
             guard var d = draft, let s = draftStart else { break }
+            var committed = true
             switch currentTool {
-            case .pen: d.points.append(p); if d.points.count > 1 { items.append(d) }
-            case .rect, .ellipse: d.rect = normalizeRect(s, p); if d.rect.width > 2, d.rect.height > 2 { items.append(d) }
+            case .pen: d.points.append(p); committed = d.points.count > 1
+            case .rect, .ellipse:
+                d.rect = normalizeRect(s, p); committed = d.rect.width > 2 && d.rect.height > 2
             case .mosaic:
                 d.rect = normalizeRect(s, p)
-                if d.rect.width > 2, d.rect.height > 2 { d.mosaicSource = buildMosaic(d.rect); if d.mosaicSource != nil { items.append(d) } }
-            case .arrow: d.points = [s, p]; items.append(d)
-            case .text, .number: break
+                if d.rect.width > 2, d.rect.height > 2 { d.mosaicSource = buildMosaic(d.rect) }
+                committed = d.mosaicSource != nil
+            case .arrow: d.points = [s, p]
+            case .text, .number, .select: committed = false
             }
-        case .resize, .move:
+            if committed { pushUndo(); items.append(d) }
+        case .resize, .move, .itemMove:
             break
         case .none: break
         }
-        mode = .none; draft = nil; draftStart = nil; needsDisplay = true
+        mode = .none; draft = nil; draftStart = nil; moveUndoPushed = false; needsDisplay = true
     }
 
     override func keyDown(with event: NSEvent) {
         switch Int(event.keyCode) {
-        case 53, 36, 76:               // Esc / Return / KeypadReturn：应用标注后复制并结束
+        case 51, 117:                  // Delete / ForwardDelete：删除选中元素
+            if let sid = selectedID, let idx = items.firstIndex(where: { $0.id == sid }) {
+                pushUndo(); items.remove(at: idx); selectedID = nil; rebuildNextNumber(); needsDisplay = true
+            } else {
+                super.keyDown(with: event)
+            }
+        case 53:                       // Esc：有选中时先清除选中，否则维持"应用并结束"
+            if selectedID != nil { selectedID = nil; needsDisplay = true; return }
+            commitTextEditorIfNeeded()
+            windowController?.copyAndClose()
+        case 36, 76:                   // Return / KeypadReturn：应用标注后复制并结束
             commitTextEditorIfNeeded()
             windowController?.copyAndClose()
         default:
@@ -195,13 +250,40 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         addSubview(editor); textEditor = editor
         window?.makeFirstResponder(editor)
     }
+    /// 双击再编辑已有文字：用元素自身属性建编辑器并暂存原元素（从 items 移除避免双重绘制）。
+    private func editText(item: AnnotationItem) {
+        guard textEditor == nil, let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
+        pushUndo()
+        items.remove(at: idx)
+        editingItem = (idx, item)
+        let fs = item.fontSize
+        let editor = NSTextField(frame: NSRect(x: item.rect.minX, y: item.rect.minY,
+                                               width: max(160, fs * 12), height: fs * 1.4))
+        editor.isBordered = false; editor.drawsBackground = false; editor.focusRingType = .none
+        editor.font = NSFont.systemFont(ofSize: fs); editor.textColor = item.color
+        editor.stringValue = item.text
+        editor.delegate = self
+        addSubview(editor); textEditor = editor
+        window?.makeFirstResponder(editor)
+    }
+
     func controlTextDidEndEditing(_ obj: Notification) { commitTextEditorIfNeeded() }
     private func commitTextEditorIfNeeded() {
         guard let editor = textEditor else { return }
         let str = editor.stringValue
         let origin = NSPoint(x: editor.frame.minX, y: editor.frame.minY)
         editor.removeFromSuperview(); textEditor = nil
-        if !str.isEmpty {
+        if var editing = editingItem {
+            // 再编辑提交：editText 已压栈，此处只回写。空文字 = 删除该元素。
+            editingItem = nil
+            if !str.isEmpty {
+                editing.item.text = str
+                editing.item.rect = NSRect(origin: origin, size: .zero)
+                items.insert(editing.item, at: min(editing.index, items.count))
+            }
+            rebuildNextNumber()   // 空文字删除路径同样重算序号
+        } else if !str.isEmpty {
+            pushUndo()
             items.append(AnnotationItem(kind: .text, color: currentColor, lineWidth: lineWidth,
                                         rect: NSRect(origin: origin, size: .zero),
                                         text: str, fontSize: textFontSize))
@@ -210,11 +292,22 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     // MARK: - 工具
+    private func pushUndo() {
+        undoStack.append(items)
+        if undoStack.count > 64 { undoStack.removeFirst() }   // ponytail: 快照栈限高 64，够用；防长会话累积
+    }
+
     func undo() {
-        if let last = items.popLast() {
-            if last.kind == .number { nextNumber = last.number }   // 撤销序号后，下一次点击复用该号
-        }
+        commitTextEditorIfNeeded()   // 编辑中按 undo：先提交再弹栈，净效果 = 丢弃本次编辑
+        guard let snap = undoStack.popLast() else { return }
+        items = snap
+        rebuildNextNumber()
+        if let sid = selectedID, !items.contains(where: { $0.id == sid }) { selectedID = nil }
         needsDisplay = true
+    }
+
+    private func rebuildNextNumber() {
+        nextNumber = (items.filter { $0.kind == .number }.map { $0.number }.max() ?? 0) + 1
     }
 
     // MARK: - 绘制
@@ -251,6 +344,16 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             let hp = NSBezierPath(rect: hr.insetBy(dx: 1, dy: 1)); hp.lineWidth = 1.5; hp.stroke()
         }
 
+        // 选中元素：虚线外接框（画在裁剪外，元素移出选区时仍可见）
+        if let sid = selectedID, let it = items.first(where: { $0.id == sid }) {
+            NSColor.systemBlue.setStroke()
+            let box = NSBezierPath(rect: it.boundingBox.insetBy(dx: -2, dy: -2))
+            box.lineWidth = 1.5
+            box.setLineDash([4, 3], count: 2, phase: 0)
+            box.stroke()
+            box.setLineDash([], count: 0, phase: 0)   // 复位虚线，避免状态泄漏给后续绘制
+        }
+
         drawSizeLabel(sel)
     }
 
@@ -260,6 +363,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     // MARK: - 合成输出（按选取框裁剪）
     func renderFinal() -> CGImage? {
+        commitTextEditorIfNeeded()   // 编辑中的文字先归位 items，否则 save/pin/ocr 丢元素
         let px = pixelRect(of: selection)
         guard px.width >= 1, px.height >= 1,
               let crop = baseImage.cropping(to: px),

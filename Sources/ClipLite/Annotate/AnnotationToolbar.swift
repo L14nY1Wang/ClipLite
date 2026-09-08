@@ -47,6 +47,7 @@ final class AnnotationToolbar: NSPanel {
         stack.edgeInsets = NSEdgeInsets(top: 10, left: 14, bottom: 10, right: 14)
 
         let tools: [(AnnotationTool, String, String)] = [
+            (.select, "cursorarrow", "选择"),
             (.rect, "rectangle", "矩形"),
             (.ellipse, "circle", "椭圆"),
             (.arrow, "arrow.up.right", "箭头"),
@@ -145,7 +146,8 @@ final class AnnotationToolbar: NSPanel {
     }
 
     func highlightDefaultTool() {
-        if let first = toolButtons.min(by: { $0.key.frame.minX < $1.key.frame.minX }) {
+        // 默认高亮矩形工具（与 canvas.currentTool 初始值一致；"选择"按钮虽排最左但不是默认）
+        if let first = toolButtons.first(where: { $0.value == .rect }) {
             highlightTool(first.key)
         }
     }

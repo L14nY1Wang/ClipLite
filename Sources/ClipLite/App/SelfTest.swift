@@ -4,6 +4,7 @@ import AppKit
 /// 命令行自测：截屏 → 裁剪中心区域 → 写 PNG → 打印内存占用。
 enum SelfTest {
     static func run() {
+        AnnotationItem.selfCheck()
         guard ScreenCapture.preflight() else {
             print("SELFTEST: 屏幕录制权限未授予。请在 系统设置 → 隐私与安全 → 屏幕录制 中允许 ClipLite 后重启应用。")
             _ = ScreenCapture.request()
