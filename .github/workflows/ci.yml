@@ -1,0 +1,26 @@
+name: CI
+
+# 触发：PR 到 main / push 到 main。
+# 只做编译验证：selftest 需要 GUI + 截图权限，CI headless 跑不了。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - name: Build
+        run: swift build -c release
+      - name: Lint scripts
+        run: bash -n scripts/*.sh
+      - name: Whitespace check
+        run: git diff --check HEAD~1 HEAD  # 检本次变更（PR 时为 merge 提交，覆盖全部改动）；fetch-depth<2 的孤立提交会跳过
