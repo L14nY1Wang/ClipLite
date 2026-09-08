@@ -121,6 +121,13 @@ final class AppSettings {
         }
     }
 
+    // 上次保存目录（跨进程记忆；App 非沙盒，直接存 URL 字符串即可）
+    private let kLastSaveDir = "lastSaveDirectory"
+    var lastSaveDirectory: URL? {
+        get { d.string(forKey: kLastSaveDir).flatMap(URL.init(string:)) }
+        set { d.set(newValue?.absoluteString, forKey: kLastSaveDir) }
+    }
+
     private func decodeInts(_ kcKey: String, _ modsKey: String) -> HotKey? {
         guard let kc = d.object(forKey: kcKey) as? NSNumber,
               let mods = d.object(forKey: modsKey) as? NSNumber else { return nil }
@@ -135,3 +142,17 @@ final class AppSettings {
         return try? JSONDecoder().decode(HotKey.self, from: data)
     }
 }
+
+#if !RELEASE_BUILD
+extension AppSettings {
+    /// 可运行检查：lastSaveDirectory 经 UserDefaults 往返必须无损（含空格/CJK 路径），且不残留脏值。
+    static func selfCheck() {
+        let old = shared.lastSaveDirectory
+        let dir = URL(fileURLWithPath: "/tmp/ClipLite 自测 目录", isDirectory: true)
+        shared.lastSaveDirectory = dir
+        assert(shared.lastSaveDirectory?.path == dir.path, "lastSaveDirectory 往返失败")
+        shared.lastSaveDirectory = old
+        assert(shared.lastSaveDirectory == old, "lastSaveDirectory 恢复失败")
+    }
+}
+#endif
