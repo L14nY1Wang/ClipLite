@@ -51,8 +51,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let titleStack = NSStackView()
         titleStack.orientation = .vertical
         titleStack.spacing = 2
-        let title = NSTextField(labelWithString: "ClipLite")
-        title.font = NSFont.systemFont(ofSize: 17, weight: .bold)
+        let title = NSTextField(labelWithAttributedString: Self.headerTitle)
         let subtitle = NSTextField(labelWithString: "截图 · 贴图 · 标注 · OCR")
         subtitle.font = NSFont.systemFont(ofSize: 12)
         subtitle.textColor = .secondaryLabelColor
@@ -98,7 +97,41 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         refreshTitles()
     }
 
+    /// 头部标题：app 名 + 版本号。dev 构建的 CFBundleDisplayName 是「ClipLite Dev」，
+    /// 双开时可在设置窗区分实例；`swift run` 裸跑无 Info.plist，回退硬编码名、不显示版本。
+    private static var headerTitle: NSAttributedString {
+        let name = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? "ClipLite"
+        let s = NSMutableAttributedString(
+            string: name,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 17, weight: .bold),
+                .foregroundColor: NSColor.labelColor,
+            ])
+        if let ver = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+            s.append(NSAttributedString(
+                string: "  \(ver)",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]))
+        }
+        return s
+    }
+
     private func makeIconTile() -> NSView {
+        // 打包后的 app 用真实图标；swift run 无 bundle 图标，回退 SF Symbol 色块
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") != nil,
+           let icon = NSApp.applicationIconImage {
+            let iv = NSImageView()
+            iv.image = icon
+            iv.imageScaling = .scaleProportionallyUpOrDown
+            iv.translatesAutoresizingMaskIntoConstraints = false
+            iv.widthAnchor.constraint(equalToConstant: 40).isActive = true
+            iv.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            return iv
+        }
         let tile = NSView(frame: .zero)
         tile.wantsLayer = true
         tile.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
