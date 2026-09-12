@@ -60,7 +60,16 @@ final class OCRResultPanel: NSPanel {
     /// 停靠显示在 rect（全局点坐标）下方，放不下放上方。level 需高于宿主窗口以浮在其上。
     func show(text: String, below rect: NSRect, level: NSWindow.Level) {
         self.level = level
-        textView.string = text
+        if text.isEmpty {
+            // 空结果给明确占位，避免「面板弹出却一片空白」被误认为功能失效
+            let placeholder = NSAttributedString(string: "未识别到文字", attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ])
+            textView.textStorage?.setAttributedString(placeholder)
+        } else {
+            textView.string = text
+        }
         let screen = NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main
         let sf = screen?.frame ?? .zero
         var x = rect.midX - panelW / 2
@@ -75,7 +84,9 @@ final class OCRResultPanel: NSPanel {
     @objc private func copyAll() {
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString(textView.string, forType: .string)
+        // 占位文案不进剪贴板：空结果复制空串
+        let s = textView.string == "未识别到文字" ? "" : textView.string
+        pb.setString(s, forType: .string)
     }
 
     @objc private func dismiss() { orderOut(nil) }
