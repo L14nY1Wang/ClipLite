@@ -13,6 +13,12 @@ final class PinView: NSView {
     private var startFrame = NSRect.zero
     private let grip: CGFloat = 18
 
+    // 切分模式：在贴图上框选一块区域，松手即以该区域生成新贴图；右键取消
+    var cropMode = false { didSet { needsDisplay = true } }
+    private var cropStart: NSPoint?
+    private var cropRect: NSRect = .zero
+    private let minCropSize: CGFloat = 8
+
     init(image: CGImage, baseSize: NSSize) {
         self.cgImage = image
         self.baseSize = baseSize
@@ -41,6 +47,36 @@ final class PinView: NSView {
             path.line(to: NSPoint(x: bounds.maxX - 2, y: bounds.minY + g - i))
         }
         path.stroke()
+
+        if cropMode { drawCropOverlay() }
+    }
+
+    /// 切分模式覆盖层：选区外压暗 + 蓝框 + 操作提示
+    private func drawCropOverlay() {
+        let sel = cropRect
+        NSColor.black.withAlphaComponent(0.35).setFill()
+        if sel.isEmpty {
+            bounds.fill()
+        } else {
+            NSRect(x: 0, y: sel.maxY, width: bounds.width, height: bounds.height - sel.maxY).fill()
+            NSRect(x: 0, y: 0, width: sel.minX, height: sel.height).fill()
+            NSRect(x: sel.maxX, y: 0, width: bounds.width - sel.maxX, height: sel.height).fill()
+            NSRect(x: 0, y: 0, width: bounds.width, height: sel.minY).fill()
+            NSColor.controlAccentColor.setStroke()
+            let border = NSBezierPath(rect: sel)
+            border.lineWidth = 1.5
+            border.stroke()
+        }
+        let hint = "拖拽框选区域生成新贴图，右键取消"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let size = hint.size(withAttributes: attrs)
+        // 提示条贴在选区上边缘上方（无选区时贴窗口顶部），保证始终在压暗区域内可读
+        let y = sel.isEmpty ? bounds.height - size.height - 10 : min(bounds.height - size.height - 4, sel.maxY + 6)
+        let x = min(max(sel.midX - size.width / 2, 6), bounds.width - size.width - 6)
+        hint.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
     }
 
     private func gripRect() -> NSRect {
@@ -49,6 +85,12 @@ final class PinView: NSView {
 
     // MARK: - 鼠标
     override func mouseDown(with event: NSEvent) {
+        if cropMode {
+            cropStart = convert(event.locationInWindow, from: nil)
+            cropRect = .zero
+            needsDisplay = true
+            return
+        }
         if event.clickCount >= 2 { window?.close(); return }
         let p = convert(event.locationInWindow, from: nil)
         guard let w = window else { return }
@@ -62,6 +104,14 @@ final class PinView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if cropMode {
+            guard let start = cropStart else { return }
+            let now = convert(event.locationInWindow, from: nil)
+            cropRect = NSRect(x: min(start.x, now.x), y: min(start.y, now.y),
+                              width: abs(start.x - now.x), height: abs(start.y - now.y))
+            needsDisplay = true
+            return
+        }
         guard let w = window else { return }
         switch mode {
         case .move:
@@ -84,11 +134,23 @@ final class PinView: NSView {
         }
     }
 
-    override func mouseUp(with event: NSEvent) { mode = .idle }
+    override func mouseUp(with event: NSEvent) {
+        if cropMode {
+            let tooSmall = cropRect.width < minCropSize || cropRect.height < minCropSize
+            if !tooSmall { emitSplit() }
+            finishCrop()
+            return
+        }
+        mode = .idle
+    }
 
-    override func rightMouseDown(with event: NSEvent) { owner?.showMenu(event: event) }
+    override func rightMouseDown(with event: NSEvent) {
+        if cropMode { finishCrop(); return }   // 右键 = 取消切分
+        owner?.showMenu(event: event)
+    }
 
     override func scrollWheel(with event: NSEvent) {
+        if cropMode { return }
         guard let w = window else { return }
         let factor: CGFloat = event.deltaY > 0 ? 1.1 : (event.deltaY < 0 ? 1 / 1.1 : 1)
         // 以当前窗口尺寸为基准缩放（尊重 grip 拖出的自定义宽高比），上下限保留相对 baseSize 的 0.1×…16×
@@ -104,5 +166,28 @@ final class PinView: NSView {
         f.origin.y = cursor.y - fy * newSize.height
         w.setFrame(f, display: true, animate: false)
         needsDisplay = true
+    }
+
+    /// 结束切分：无论成功、选区过小还是右键取消，一律回到普通模式
+    private func finishCrop() {
+        cropStart = nil
+        cropRect = .zero
+        cropMode = false
+        needsDisplay = true
+    }
+
+    /// 按框选区域裁出子图并上报：贴图点坐标 → 图像像素（CGImage 原点在左上，需翻转 y）
+    private func emitSplit() {
+        let scaleX = CGFloat(cgImage.width) / bounds.width
+        let scaleY = CGFloat(cgImage.height) / bounds.height
+        let px = CGRect(x: (cropRect.minX * scaleX).rounded(),
+                        y: ((bounds.height - cropRect.maxY) * scaleY).rounded(),
+                        width: (cropRect.width * scaleX).rounded(),
+                        height: (cropRect.height * scaleY).rounded())
+        guard px.width >= 1, px.height >= 1, let crop = cgImage.cropping(to: px) else { return }
+        let frame = NSRect(x: window!.frame.minX + cropRect.minX,
+                           y: window!.frame.minY + cropRect.minY,
+                           width: cropRect.width, height: cropRect.height)
+        owner?.splitOut(image: crop, frame: frame)
     }
 }

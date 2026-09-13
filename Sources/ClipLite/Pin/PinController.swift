@@ -10,6 +10,7 @@ final class PinController {
             guard let c else { return }
             self?.remove(c)
         }
+        c.onSplit = { [weak self] img, frame in self?.pin(image: img, at: frame) }
         pins.append(c)
         c.show()
     }

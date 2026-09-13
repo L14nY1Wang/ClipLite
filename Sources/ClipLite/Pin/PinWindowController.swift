@@ -24,6 +24,8 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     let panel: PinPanel
     let pinView: PinView
     var onClose: (() -> Void)?
+    /// 切分出的子贴图经此回调交还 PinController 创建（避免控制器反向持有 PinController）
+    var onSplit: ((CGImage, NSRect) -> Void)?
     private var ocrPanel: OCRResultPanel?
 
     init(image: CGImage, frame: NSRect) {
@@ -56,6 +58,10 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     // MARK: - 右键菜单动作
     @objc func close() { panel.close() }
     @objc func copyImage() { Clipboard.write(image: pinView.cgImage) }
+    /// 进入/退出切分模式：框选一块区域生成新贴图，原贴图保留
+    @objc func toggleSplit() { pinView.cropMode.toggle() }
+    /// PinView 框选完成回调
+    func splitOut(image: CGImage, frame: NSRect) { onSplit?(image, frame) }
     @objc func toggleShadow() {
         panel.hasShadow.toggle()
         panel.invalidateShadow()
@@ -81,6 +87,7 @@ final class PinWindowController: NSObject, NSWindowDelegate {
         let m = NSMenu()
         m.addItem(titled("识别文字", #selector(recognize)))
         m.addItem(titled("复制图片", #selector(copyImage)))
+        m.addItem(titled(pinView.cropMode ? "退出切分" : "切分贴图", #selector(toggleSplit)))
         m.addItem(titled("关闭", #selector(close)))
         m.addItem(.separator())
 
