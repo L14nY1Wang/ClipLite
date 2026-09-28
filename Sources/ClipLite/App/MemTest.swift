@@ -70,17 +70,40 @@ final class Harness: NSObject, NSApplicationDelegate {
     private func scenarioA() {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            var captured: ScreenCapture.Display?
+            var displays: [ScreenCapture.Display] = []
             do {
-                captured = try await ScreenCapture.captureAll().first
+                displays = try await ScreenCapture.captureAll()
             } catch {
                 print("MEMSTEP[A] 截屏失败（权限？）: \(error)")
             }
+            // 多显示器记账：SelectionController 会把所有屏的整屏位图同时持有，
+            // 这里是该场景的内存上界；单屏版文档从未覆盖，故显式打印。
+            if !displays.isEmpty {
+                let geom = displays.map { "\($0.image.width)x\($0.image.height)" }.joined(separator: " + ")
+                let bytes = displays.reduce(0) { $0 + $1.image.width * $1.image.height * 4 }
+                print("MEMSTEP[A0] displays=\(displays.count) px=[\(geom)] 位图合计=\(bytes / 1048576)MB \(Harness.memLine())")
+                // A0b：⌥1 的真实峰值是「每屏一个覆盖窗」，而非只持 CGImage。
+                // 走同一构造函数（SelectionController.present 的逻辑），测完按 teardown 语义关窗。
+                let rects = SelectionController.snapshotWindowList()
+                let probe = SelectionController()   // 不调用 start()，仅满足非可选参数
+                var overlays: [SelectionWindow] = displays.map { d in
+                    let win = SelectionWindow(screen: d.screen)
+                    win.contentView = SelectionView(display: d, windowRects: rects, controller: probe)
+                    return win
+                }
+                for w in overlays { w.orderFrontRegardless() }
+                print("MEMSTEP[A0b] overlays shown=\(overlays.count) \(Harness.memLine())")
+                for w in overlays { w.orderOut(nil); w.close() }   // 同 SelectionController.teardown
+                overlays = []
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                print("MEMSTEP[A0c] overlays closed+drained \(Harness.memLine())")
+            }
+            let captured = displays.first
+            displays = []   // 只留首屏，避免整组位图被闭包捕获污染后续测量（同原语义）
             // 只取出需要的 image + screen，立刻释放 ScreenCapture.Display（含可能的 IOSurface 句柄），
             // 否则它会被 Task 闭包捕获直到整条链结束，污染后续所有测量。
             let img = captured?.image
             let scr = captured?.screen
-            captured = nil
             if let img = img, let scr = scr {
                 print("MEMSTEP[A1] captured \(img.width)x\(img.height) \(Harness.memLine())")
                 let sel = NSRect(x: scr.frame.width * 0.25, y: scr.frame.height * 0.25,
@@ -100,6 +123,51 @@ final class Harness: NSObject, NSApplicationDelegate {
             } else {
                 print("MEMSTEP[A] 无可用显示器，跳过场景 A")
             }
+            self.scenarioF()
+        }
+    }
+
+    // MARK: F. 重复整条截图流程（覆盖窗 → 关 → 标注窗 → 关）20 轮
+    //（长跑实例 71.8MB vs 文档 20MB 的差异，判定是「一次性漂移」还是「每轮累积」）
+    @MainActor
+    private func scenarioF() {
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            guard let ctx = Harness.makeContext(w: 2266, h: 1488), let img = ctx.makeImage() else {
+                print("MEMSTEP[F] 合成图失败"); self.scenarioB(); return
+            }
+            let scr = NSScreen.screens[0]
+            let rects = SelectionController.snapshotWindowList()
+            let probe = SelectionController()
+            print("MEMSTEP[F0] 开始前 \(Harness.memLine())")
+            for i in 1...20 {
+                autoreleasepool {
+                    // 1) 覆盖窗：走 SelectionController.teardown 的真实语义（orderOut + close，不 detach）
+                    var ws: [SelectionWindow] = [scr].map { s in
+                        let win = SelectionWindow(screen: s)
+                        win.contentView = SelectionView(display: ScreenCapture.Display(
+                            displayID: 0, screen: s, image: img), windowRects: rects, controller: probe)
+                        return win
+                    }
+                    for w in ws { w.orderFrontRegardless() }
+                    for w in ws { w.orderOut(nil); w.close() }
+                    ws = []
+                    // 2) 标注窗
+                    var ann: AnnotationWindowController? =
+                        AnnotationWindowController(fullImage: img, screen: scr,
+                                                   initialSelection: NSRect(x: 100, y: 100, width: 600, height: 400))
+                    ann!.show()
+                    _ = ann!.canvas.renderFinal()
+                    ann?.close()
+                    ann = nil
+                }
+                if i % 5 == 0 || i == 1 {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    print("MEMSTEP[F\(i)] 第\(i)轮后 \(Harness.memLine())")
+                }
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            print("MEMSTEP[Fend] 20轮后静置 \(Harness.memLine())")
             self.scenarioB()
         }
     }
