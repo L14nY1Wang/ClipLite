@@ -4,6 +4,27 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.0] - 2026-09-28
+
+可靠性与发布工程化：热键失败可见、tap 自动同步、测试基线、文档口径对齐。
+
+### 新增
+- **Homebrew tap 自动同步（零 secret）**：`homebrew-cliplite` 新增 `sync-cask.yml`，每 2 小时拉取最新 Release 并按其 asset `digest` 更新 cask，有变化才提交。此前 tap 更新依赖 `TAP_PAT`，而本仓库 `Actions secrets` 为空、该步骤**从 v0.2.0 起一直被跳过**（0.2.0/0.2.1 的 tap 均为手工更新）；现在无需任何凭据。已实测：注入过期的 0.2.0 后触发同步，机器人自动提交回 `cliplite 0.2.1` 且 sha256 正确。
+- **菜单「重置录屏授权并重启」**：ad-hoc 升级后录屏授权会失效，原先要用户手敲 `tccutil reset`，现做成菜单一键（内部执行 `tccutil reset ScreenCapture <bundle id>` 后自动重启）。
+- **`⌥2` 支持 Finder 里复制的图片文件**：此前 `Clipboard.readImage` 只认剪贴板里的 `tiff`/`png` 位图数据，复制图片文件后按 `⌥2` 静默无事发生；现补 `fileURL` 回退（取第一个可解码的文件）。
+- **单元测试基线**：新增 `Tests/ClipLiteTests`（SwiftPM `testTarget`），把原先散落在源码 `#if !RELEASE_BUILD` 里的 3 处 `selfCheck` 迁成 XCTest 用例；CI 新增 `swift test`（原 CI 只编译，不跑任何逻辑校验）。
+
+### 修复
+- **热键注册失败不再静默**：`HotKeyCenter.register` 改为返回结果。启动时若有快捷键已被系统或其它 App 占用会弹提示（可一键跳设置）；在设置里改键若注册失败会**回滚**并提示，不再落盘一个按不响的组合。
+- **`--trigger` 去掉 0.6s 盲等**：原先靠固定 `Thread.sleep(0.6)` 赌异步投递能赶上，实测（每轮重启实例、逐次判定基线归零）无需等待即可送达，已移除。
+
+### 变更
+- 删除源码内 3 处 `selfCheck()`（断言已迁至 `Tests/`），`--selftest` 不再调用它们。
+
+### 文档
+- `README.md` 内存口径对齐实测：空闲由「约 **7MB**」更正为「约 **8MB**」，并补充「使用后回落至饱和平台（20–75MB，非累积泄漏）」与「三屏截图峰值 149.6MB」。
+- `README.md` 新增「已知限制」：不支持跨屏框选、仅 Apple Silicon（arm64）、ad-hoc 未公证；「升级后无法截图」一节改为指向新的一键菜单。
+
 ## [0.2.1] - 2026-09-28
 
 贴图交互修复 + 多屏内存实测。
