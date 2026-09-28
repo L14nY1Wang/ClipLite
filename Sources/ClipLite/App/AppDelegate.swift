@@ -39,7 +39,7 @@ final class AppCoordinator: NSObject {
             _ = ScreenCapture.request()
         }
 
-        applyHotKeys()
+        reportHotKeyFailures(applyHotKeys())
 
         // 自动化接口：`ClipLite --trigger-capture`（供脚本/测试调用）
         DistributedNotificationCenter.default().addObserver(self,
@@ -54,14 +54,40 @@ final class AppCoordinator: NSObject {
     }
 
     /// 依据当前设置注册全局热键（截图 / 贴图），改键后重新调用即可热更新。
-    func applyHotKeys() {
+    /// - Returns: 注册失败的快捷键标签（如 `["⌥1"]`）；空数组表示全部成功。
+    @discardableResult
+    func applyHotKeys() -> [String] {
+        var failed: [String] = []
         let s = settings.screenshotHotKey
-        hotKeys.register(id: 1, keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+        if !hotKeys.register(id: 1, keyCode: s.keyCode, modifiers: s.modifiers, handler: { [weak self] in
             self?.startCapture()
+        }) {
+            failed.append(HotKeyFormatter.label(s))
         }
         let p = settings.pinClipboardHotKey
-        hotKeys.register(id: 2, keyCode: p.keyCode, modifiers: p.modifiers) { [weak self] in
+        if !hotKeys.register(id: 2, keyCode: p.keyCode, modifiers: p.modifiers, handler: { [weak self] in
             self?.pinClipboard()
+        }) {
+            failed.append(HotKeyFormatter.label(p))
+        }
+        return failed
+    }
+
+    /// 热键注册失败时告知用户。此前只 NSLog，用户对「快捷键按了没反应」完全无感。
+    func reportHotKeyFailures(_ failed: [String]) {
+        guard !failed.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = "快捷键注册失败"
+        alert.informativeText = """
+            \(failed.joined(separator: "、")) 已被系统或其它 App 占用，无法生效。
+
+            可在「设置…」中改用别的组合键。
+            """
+        alert.addButton(withTitle: "打开设置")
+        alert.addButton(withTitle: "知道了")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            showSettings()
         }
     }
 
@@ -173,6 +199,24 @@ final class AppCoordinator: NSObject {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// 重置本应用的录屏授权记录并重启。
+    /// ad-hoc 签名每次升级都会换代码指纹，旧授权随即失效——这正是 README 里要用户手敲
+    /// `tccutil reset` 的那一步。做成菜单一键：重置 → 重启，启动流程会重新发起授权请求。
+    @objc func resetScreenRecordingPermission() {
+        let id = Bundle.main.bundleIdentifier ?? "com.lianyi.cliplite.dev"
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        task.arguments = ["reset", "ScreenCapture", id]
+        do {
+            try task.run()
+            task.waitUntilExit()
+            NSLog("ClipLite: 已重置 \(id) 的录屏授权（exit \(task.terminationStatus)）")
+        } catch {
+            NSLog("ClipLite: tccutil reset 失败 \(error)")
+        }
+        relaunch()
     }
 
     @objc func relaunch() {

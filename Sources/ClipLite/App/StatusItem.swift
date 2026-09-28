@@ -26,6 +26,7 @@ final class StatusBarController {
         menu.addItem(.separator())
         menu.addItem(item("设置…", #selector(AppCoordinator.showSettings)))
         menu.addItem(item("屏幕录制权限…", #selector(AppCoordinator.openScreenCapturePrefs)))
+        menu.addItem(item("重置录屏授权并重启", #selector(AppCoordinator.resetScreenRecordingPermission)))
         menu.addItem(item("重启应用", #selector(AppCoordinator.relaunch)))
         menu.addItem(.separator())
         menu.addItem(item("退出 ClipLite", #selector(AppCoordinator.quit)))

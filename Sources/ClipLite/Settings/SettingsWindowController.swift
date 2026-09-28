@@ -239,11 +239,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             NSSound.beep()
             return
         }
+        // 记下旧值：注册失败要回滚，绝不落盘一个按不响的快捷键
+        let old: HotKey = (kind == .screenshot) ? s.screenshotHotKey : s.pinClipboardHotKey
         switch kind {
         case .screenshot: s.setScreenshot(hk)
         case .pin:        s.setPinClipboard(hk)
         }
-        coordinator?.applyHotKeys()
+        let failed = coordinator?.applyHotKeys() ?? []
+        if failed.contains(HotKeyFormatter.label(hk)) {
+            switch kind {
+            case .screenshot: s.setScreenshot(old)
+            case .pin:        s.setPinClipboard(old)
+            }
+            coordinator?.applyHotKeys()   // 把旧键重新注册回去
+            NSSound.beep()
+            stopRecording()
+            let alert = NSAlert()
+            alert.messageText = "快捷键不可用"
+            alert.informativeText = "\(HotKeyFormatter.label(hk)) 已被系统或其它 App 占用，注册失败。"
+                + "已保留原快捷键 \(HotKeyFormatter.label(old))。"
+            alert.runModal()
+            return
+        }
         coordinator?.statusItem.rebuildMenu()
     }
 

@@ -20,7 +20,9 @@ final class HotKeyCenter {
     private var eventHandlerRef: EventHandlerRef?
     private let signature: OSType = 0x534E504C // "SNPL"（ClipLite 产品名缩写，任意自定义值均可）
 
-    func register(id: UInt32, keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) {
+    /// - Returns: 注册是否成功。失败通常意味着该组合已被系统或其它 App 占用。
+    @discardableResult
+    func register(id: UInt32, keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) -> Bool {
         installIfNeeded()
         unregister(id: id)
         var ref: EventHotKeyRef?
@@ -34,9 +36,10 @@ final class HotKeyCenter {
         if status == noErr, let ref = ref {
             refs[id] = ref
             handlers[id] = handler
-        } else {
-            NSLog("HotKeyCenter: register failed id=\(id) status=\(status)")
+            return true
         }
+        NSLog("HotKeyCenter: register failed id=\(id) status=\(status)")
+        return false
     }
 
     func unregister(id: UInt32) {
