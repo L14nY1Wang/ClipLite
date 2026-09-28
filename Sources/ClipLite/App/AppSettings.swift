@@ -142,17 +142,3 @@ final class AppSettings {
         return try? JSONDecoder().decode(HotKey.self, from: data)
     }
 }
-
-#if !RELEASE_BUILD
-extension AppSettings {
-    /// 可运行检查：lastSaveDirectory 经 UserDefaults 往返必须无损（含空格/CJK 路径），且不残留脏值。
-    static func selfCheck() {
-        let old = shared.lastSaveDirectory
-        let dir = URL(fileURLWithPath: "/tmp/ClipLite 自测 目录", isDirectory: true)
-        shared.lastSaveDirectory = dir
-        assert(shared.lastSaveDirectory?.path == dir.path, "lastSaveDirectory 往返失败")
-        shared.lastSaveDirectory = old
-        assert(shared.lastSaveDirectory == old, "lastSaveDirectory 恢复失败")
-    }
-}
-#endif

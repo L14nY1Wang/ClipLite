@@ -1,7 +1,7 @@
 name: CI
 
 # 触发：PR 到 main / push 到 main。
-# 只做编译验证：selftest 需要 GUI + 截图权限，CI headless 跑不了。
+# 只做编译 + 单元测试：selftest/memtest 需要 GUI + 截图权限，CI headless 跑不了。
 on:
   push:
     branches: [main]
@@ -18,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 2 }
+      - name: Test
+        run: swift test
       - name: Build
         run: swift build -c release
       - name: 验证发布二进制不含诊断代码

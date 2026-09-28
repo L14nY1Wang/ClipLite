@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "ClipLite",
             path: "Sources/ClipLite"
+        ),
+        .testTarget(
+            name: "ClipLiteTests",
+            dependencies: ["ClipLite"],
+            path: "Tests/ClipLiteTests"
         )
     ]
 )

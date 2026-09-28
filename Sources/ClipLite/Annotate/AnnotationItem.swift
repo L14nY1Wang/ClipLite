@@ -137,16 +137,3 @@ struct AnnotationItem {
         }
     }
 }
-
-#if !RELEASE_BUILD
-extension AnnotationItem {
-    /// 可运行检查：箭头头部端点必须落在 boundingBox 内（钉住 pad 与 draw 的 hl 公式一致）。
-    static func selfCheck() {
-        let a = AnnotationItem(kind: .arrow, color: .red, lineWidth: 3,
-                               rect: .zero, points: [NSPoint(x: 100, y: 100), NSPoint(x: 200, y: 100)])
-        let hl: CGFloat = 12 + 3 * 2   // 与 draw 中 scale=1 的 hl 一致；水平箭头头部纵向延伸 = hl·sin(0.15π) ≈ 8.2
-        let tip = NSPoint(x: 200 - hl * 0.9, y: 100 + hl * CGFloat(sin(.pi * 0.15)))
-        assert(a.boundingBox.contains(tip), "arrow head tip \(tip) outside boundingBox \(a.boundingBox)")
-    }
-}
-#endif

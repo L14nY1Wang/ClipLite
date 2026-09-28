@@ -196,31 +196,3 @@ final class PinView: NSView {
                       width: size.width, height: size.height)
     }
 }
-
-#if !RELEASE_BUILD
-extension PinView {
-    /// 可运行检查：右下角手柄必须锚定左上角（minX/maxY 不变、minY 随尺寸走），保持宽高比。
-    /// 回归的是「拖右下角却动了顶边」——旧实现钉死 minY，maxY 反向漂移。
-    static func selfCheck() {
-        let start = NSRect(x: 100, y: 200, width: 400, height: 300)   // minY=200, maxY=500
-        let aspect = 400.0 / 300.0
-        // 向右下拖动（宽度主导）：left/top 必须不动，底边随尺寸下移
-        let out = resizedFrame(from: start, to: NSPoint(x: 900, y: 150))
-        assert(out.minX == start.minX, "左边漂移 \(out.minX) ≠ \(start.minX)")
-        assert(out.maxY == start.maxY, "顶边漂移 \(out.maxY) ≠ \(start.maxY)（应只有底边动）")
-        assert(out.minY < start.minY, "向下拖动未让底边下移 minY=\(out.minY)")
-        assert(abs(out.width / out.height - aspect) < 1e-9, "宽高比失真 \(out.size)")
-        assert(out.maxX == 900, "右边界未跟住光标 maxX=\(out.maxX)")
-        // 高度主导：底边应精确落在光标上，锚点不动
-        let tall = resizedFrame(from: start, to: NSPoint(x: 900, y: -300))
-        assert(tall.minY == -300, "高度主导时底边未跟住光标 minY=\(tall.minY)")
-        assert(tall.maxY == start.maxY && tall.minX == start.minX, "高度主导时锚点漂移")
-        assert(abs(tall.width / tall.height - aspect) < 1e-9, "高度主导宽高比失真 \(tall.size)")
-        // 往上拖过头：钳到下限，不翻转、不越过顶边
-        let tiny = resizedFrame(from: start, to: NSPoint(x: 110, y: 900))
-        assert(tiny.width >= 30 && tiny.height >= 22, "未钳到下限 \(tiny.size)")
-        assert(tiny.maxY == start.maxY && tiny.minX == start.minX, "钳制时锚点漂移")
-        print("PinView.selfCheck OK")
-    }
-}
-#endif
