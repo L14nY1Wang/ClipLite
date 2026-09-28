@@ -34,11 +34,12 @@ if CommandLine.arguments.contains("--memtest") {
 #endif
 
 // 自动化触发：向运行中的实例发通知执行动作（capture / pin / settings）。无需任何系统权限。
+// 注意：post 是对通知服务器的同步投递，发完直接退出即可——实测（每次重启实例、逐次判定）
+// 去掉原先的 0.6s 等待后 11/11 均能送达，那个 sleep 并非送达所必需。
 let args = CommandLine.arguments
 if let i = args.firstIndex(of: "--trigger"), i + 1 < args.count {
     DistributedNotificationCenter.default().post(name: .init("\(Bundle.main.bundleIdentifier ?? "com.lianyi.cliplite.dev").trigger"),
                                                   object: nil, userInfo: ["action": args[i + 1]])
-    Thread.sleep(forTimeInterval: 0.6)   // 让异步 post 有机会投递给常驻实例
     exit(0)
 }
 
