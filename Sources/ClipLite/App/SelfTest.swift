@@ -6,6 +6,7 @@ enum SelfTest {
     static func run() {
         AnnotationItem.selfCheck()
         AppSettings.selfCheck()
+        PinView.selfCheck()
         guard ScreenCapture.preflight() else {
             print("SELFTEST: 屏幕录制权限未授予。请在 系统设置 → 隐私与安全 → 屏幕录制 中允许 ClipLite 后重启应用。")
             _ = ScreenCapture.request()
