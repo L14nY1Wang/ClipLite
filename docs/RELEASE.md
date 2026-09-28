@@ -21,9 +21,16 @@ ClipLite 从「自签名」升级到「Apple Developer ID 签名 + 公证」后�
 | `APPLE_ISSUER_ID` | API 的 Issuer ID |
 | `APPLE_KEY_ID` | API 的 Key ID |
 | `APPLE_API_KEY_B64` | `base64 -i AuthKey_XXXX.p8` 的输出 |
-| `TAP_PAT` | 可写 `homebrew-cliplite` 的 PAT（自动更新 tap 用；不配则跳过） |
+| `TAP_PAT` | 可写 `homebrew-cliplite` 的 PAT。**现在非必需**：tap 仓库自带定时同步工作流（见下），配它只是为了让 Release 当场就更新 tap、而不是等最多 2 小时 |
 
 > 不配这些也能发布：本地和 CI 均默认使用 ad-hoc、未公证签名，不会自动选用 SnapLite Dev。发布版为 `com.lianyi.cliplite`，产物在 `build/release/ClipLite.app`；`make app` 的开发版为 `com.lianyi.cliplite.dev`（ClipLite Dev）。签名或严格校验失败会中止发布。升级后的录屏授权恢复见 [README](../README.md#升级后无法截图)。
+
+### Homebrew tap 如何自动更新（零 secret）
+
+`homebrew-cliplite` 仓库自带 `.github/workflows/sync-cask.yml`：**每 2 小时**拉取 ClipLite 的最新公开 Release，用 asset 的 `digest` 更新 `Casks/cliplite.rb` 的 `version` 与 `sha256`，有变化才提交。它用自己的 `GITHUB_TOKEN`，所以**不需要任何跨仓库凭据**，也就不用把个人 token 存进本仓库的 secrets。
+
+- 代价：「拉」模型有延迟，通常 2 小时内同步；想立刻同步，在 tap 仓库 Actions 页手动 **Run workflow**，或在本仓库配 `TAP_PAT` 走下面的推送路径。
+- 两条路径幂等（都写同样的 version/sha），同时存在也不会冲突。
 
 ## 2. 发布流程（自动）
 
