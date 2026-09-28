@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 /// 剪贴板读写。同时写 PNG 和 TIFF，兼容更多粘贴目标。
 enum Clipboard {
@@ -21,6 +22,16 @@ enum Clipboard {
         }
         if let png = pb.data(forType: .png), let rep = NSBitmapImageRep(data: png) {
             return rep.cgImage
+        }
+        // 在 Finder 里复制图片文件时，剪贴板只有 file URL、没有位图数据——
+        // 原先这里直接返回 nil，用户按 ⌥2 毫无反应。取第一个能解码的文件。
+        let urls = pb.readObjects(forClasses: [NSURL.self],
+                                  options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        for url in urls {
+            if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) {
+                return img
+            }
         }
         return nil
     }
