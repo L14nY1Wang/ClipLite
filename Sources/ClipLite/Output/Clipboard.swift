@@ -3,6 +3,12 @@ import ImageIO
 
 /// 剪贴板读写。同时写 PNG 和 TIFF，兼容更多粘贴目标。
 enum Clipboard {
+    /// 写纯文本（OCR 划选复制用）。
+    static func write(text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
     static func write(image: CGImage) {
         let pb = NSPasteboard.general
         pb.clearContents()

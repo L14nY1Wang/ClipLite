@@ -6,10 +6,13 @@ import Foundation
 ///
 /// 走子进程：Vision 模型常驻 ~52MB，进程内无法卸载；放到子进程里，识别完随 exit
 /// 自动回收，主进程 footprint 不再增长。序列化用临时 PNG（一张 1133×744 约 200–500KB）。
+///
+/// 返回结构化结果（文字 + 归一化坐标框）：调用方把文字按原位叠加渲染在图片上就地划选复制
+/// （见 `OCRTextOverlay`），不再弹独立结果窗。子进程 stdout 走 JSON 行数组。
 enum VisionOCR {
     /// 串行队列：Vision 子进程常驻 ~52MB，并发识别会同时拉起多个子进程；同一时刻只跑一个。
     private static let queue = DispatchQueue(label: "com.cliplite.ocr", qos: .userInitiated)
-    static func recognize(_ image: CGImage, completion: @escaping (Result<String, Error>) -> Void) {
+    static func recognize(_ image: CGImage, completion: @escaping (Result<[OCRLine], Error>) -> Void) {
         queue.async {
             do {
                 let text = try recognizeInSubprocess(image)
@@ -20,7 +23,7 @@ enum VisionOCR {
         }
     }
 
-    private static func recognizeInSubprocess(_ image: CGImage) throws -> String {
+    private static func recognizeInSubprocess(_ image: CGImage) throws -> [OCRLine] {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cliplite-ocr-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -73,33 +76,56 @@ enum VisionOCR {
             let stderr = String(data: errData, encoding: .utf8) ?? ""
             throw OCRError.workerFailed(status: Int(p.terminationStatus), stderr: stderr)
         }
-        return (String(data: outData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return try decodeJSON(outData)
+    }
+
+    // MARK: - 子进程 JSON 协议（stdout：`[{"t": 文字, "b": [x, y, w, h]}, ...]`，box 归一化）
+    static func encodeJSON(_ lines: [OCRLine]) throws -> Data {
+        let payload = lines.map { ["t": $0.text,
+                                   "b": [$0.box.minX, $0.box.minY, $0.box.width, $0.box.height]] }
+        return try JSONSerialization.data(withJSONObject: payload)
+    }
+
+    static func decodeJSON(_ data: Data) throws -> [OCRLine] {
+        guard let arr = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw OCRError.badOutput
+        }
+        return arr.compactMap { d in
+            guard let t = d["t"] as? String, let b = d["b"] as? [CGFloat], b.count == 4 else { return nil }
+            return OCRLine(text: t, box: CGRect(x: b[0], y: b[1], width: b[2], height: b[3]))
+        }
     }
 
     /// 同步识别：供 `--ocr-worker` 子进程直接调用。
-    static func perform(_ image: CGImage) throws -> String {
-        var text = ""
+    static func perform(_ image: CGImage) throws -> [OCRLine] {
+        var lines: [OCRLine] = []
         let request = VNRecognizeTextRequest { req, _ in
-            text = ((req.results as? [VNRecognizedTextObservation]) ?? [])
-                .compactMap { $0.topCandidates(1).first?.string }
-                .joined(separator: "\n")
+            lines = ((req.results as? [VNRecognizedTextObservation]) ?? []).compactMap { obs in
+                guard let s = obs.topCandidates(1).first?.string else { return nil }
+                return OCRLine(text: s, box: obs.boundingBox)
+            }
         }
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["zh-Hans", "en-US"]
         request.usesLanguageCorrection = true
+        // 截图常含小字：不设检测下限，避免整行小字被 Vision 直接丢弃（参考 TextGrab）
+        request.minimumTextHeight = 0
         try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
-        return text
+        return lines
     }
 }
 
 enum OCRError: Error {
     case noExecutable
+    case badOutput
     case workerFailed(status: Int, stderr: String = "")
 }
 
 extension OCRError: LocalizedError {
     var errorDescription: String? {
         switch self {
+        case .badOutput:
+            return "OCR 子进程输出无法解析"
         case .workerFailed(let status, let stderr):
             return stderr.isEmpty ? "OCR 子进程异常退出（exit \(status)）"
                                   : "OCR 子进程异常退出（exit \(status)）：\(stderr)"

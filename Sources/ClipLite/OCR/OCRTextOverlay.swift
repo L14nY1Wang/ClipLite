@@ -1,0 +1,132 @@
+import AppKit
+
+/// 一行 OCR 识别结果。`box` 为归一化矩形（Vision 约定：原点在左下、y 向上、取值 0~1），
+/// 与 AppKit 视图坐标（原点左下）同向，映射时只需按宿主尺寸缩放。
+struct OCRLine {
+    let text: String
+    let box: CGRect
+}
+
+/// OCR 文字叠加层：识别结果直接渲染在图片原位，就地划选复制，不再弹结果窗。
+/// 技术路线参考 Umi-OCR 的 `ImageWithText`（半透明底 + 白字叠在原位、左键拖选、
+/// 右键菜单 / ⌘C 复制、无有效选中时复制全部）；几何部分为纯函数，便于单测。
+enum OCRTextOverlay {
+    /// 阅读顺序：先按竖直中心从上到下，同一行内从左到右（容差 1% 图高）。
+    static func readingOrder(_ lines: [OCRLine]) -> [OCRLine] {
+        lines.sorted { a, b in
+            let ay = a.box.midY, by = b.box.midY
+            if abs(ay - by) > 0.01 { return ay > by }   // 归一化坐标 y 大 = 更靠上
+            return a.box.minX < b.box.minX
+        }
+    }
+
+    /// 归一化 box → 宿主视图坐标矩形（宿主 = 图片在视图中所占区域）。
+    static func viewRect(_ line: OCRLine, in host: NSRect) -> NSRect {
+        NSRect(x: host.minX + line.box.minX * host.width,
+               y: host.minY + line.box.minY * host.height,
+               width: line.box.width * host.width,
+               height: line.box.height * host.height)
+    }
+
+    /// 命中测试：视图点落在哪个文字块内（外扩 padding 便于抓取）。
+    static func hitTest(lines: [OCRLine], host: NSRect, point: NSPoint, padding: CGFloat = 2) -> Int? {
+        for (i, line) in lines.enumerated() {
+            if viewRect(line, in: host).insetBy(dx: -padding, dy: -padding).contains(point) { return i }
+        }
+        return nil
+    }
+
+    /// 拖拽 marquee 选中的文字行下标。单击（面积≈0）退化为点包含，避免误选仅边缘相接的邻行。
+    static func selectedIndices(lines: [OCRLine], host: NSRect, marquee: NSRect) -> Set<Int> {
+        let isClick = marquee.width < 1 && marquee.height < 1
+        var out: Set<Int> = []
+        for (i, line) in lines.enumerated() {
+            let r = viewRect(line, in: host)
+            let hit = isClick ? r.contains(NSPoint(x: marquee.midX, y: marquee.midY)) : r.intersects(marquee)
+            if hit { out.insert(i) }
+        }
+        return out
+    }
+
+    /// 拼接待复制文本（按传入顺序，通常已是阅读顺序）；indices 为空 = 全选复制
+    /// （同 Umi-OCR：无有效选中时「复制」复制全部，避免用户以为复制失败）。
+    static func copyText(lines: [OCRLine], indices: Set<Int>) -> String {
+        let sel = indices.isEmpty ? Set(lines.indices) : indices
+        return lines.indices.filter { sel.contains($0) }.map { lines[$0].text }.joined(separator: "\n")
+    }
+
+    /// 选中文字总字数（用于复制反馈）。
+    static func selectedCharCount(lines: [OCRLine], indices: Set<Int>) -> Int {
+        let sel = indices.isEmpty ? Set(lines.indices) : indices
+        return lines.indices.filter { sel.contains($0) }.reduce(0) { $0 + lines[$1].text.count }
+    }
+
+    // MARK: - 绘制
+
+    /// 绘制叠加层。宿主需自行保证裁剪（标注模式裁到蓝选区内；贴图模式即整个 bounds）。
+    /// `hint` 常驻底部操作提示；`flash` 为瞬时反馈（复制成功提示），存在时优先显示。
+    static func draw(lines: [OCRLine], selected: Set<Int>, host: NSRect,
+                     hint: String?, flash: String?) {
+        for (i, line) in lines.enumerated() {
+            let r = viewRect(line, in: host)
+            guard r.width > 0.5, r.height > 0.5, !line.text.isEmpty else { continue }
+            // 未选：半透明黑底白字（Umi-OCR #99000000 同思路，保证任何底图上可读）；
+            // 选中：强调色底，一眼区分。
+            (selected.contains(i)
+                ? NSColor.controlAccentColor.withAlphaComponent(0.92)
+                : NSColor.black.withAlphaComponent(0.45)).setFill()
+            NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5)).fill()
+
+            let font = fittedFont(line.text, box: r)
+            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+            let size = (line.text as NSString).size(withAttributes: attrs)
+            // 基线 = 竖直居中（字形范围 [baseline-descender, baseline+ascender]）
+            let baseline = r.midY - (font.ascender - font.descender) / 2
+            (line.text as NSString).draw(
+                at: NSPoint(x: r.midX - size.width / 2, y: baseline), withAttributes: attrs)
+        }
+        if let tip = flash ?? hint { drawPill(tip, in: host) }
+    }
+
+    /// 绘制居中的占位/失败文案（空结果、识别失败），避免「点了 OCR 什么都没发生」。
+    static func drawMessage(_ text: String, in host: NSRect) {
+        let font = NSFont.systemFont(ofSize: 13)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.secondaryLabelColor]
+        let size = (text as NSString).size(withAttributes: attrs)
+        (text as NSString).draw(
+            at: NSPoint(x: host.midX - size.width / 2, y: host.midY - size.height / 2),
+            withAttributes: attrs)
+    }
+
+    /// 字号自适应：以 10pt 起测，按「框面积/文字面积」开方缩放，再按高度/宽度收敛。
+    /// （Umi-OCR resetFontSize 同思路；截图里框小字密时必须缩小才不溢出。）
+    private static func fittedFont(_ text: String, box: NSRect) -> NSFont {
+        let measure: (CGFloat) -> NSSize = { ps in
+            (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: ps)])
+        }
+        var ps: CGFloat = 10
+        let s0 = measure(ps)
+        if s0.width > 0, s0.height > 0 {
+            ps = 10 * ((box.width * box.height) / (s0.width * s0.height)).squareRoot()
+        }
+        ps = min(ps, box.height / 1.15)          // 高度优先：行高通常是硬约束
+        var guardCount = 0
+        while measure(ps).height > box.height, guardCount < 20 { ps -= 1; guardCount += 1 }
+        while measure(ps).width > box.width, guardCount < 40 { ps -= 1; guardCount += 1 }
+        return NSFont.systemFont(ofSize: max(3, ps))
+    }
+
+    /// 底部居中提示 pill（黑底白字小圆角）。
+    private static func drawPill(_ text: String, in host: NSRect) {
+        let font = NSFont.systemFont(ofSize: 11)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let padH: CGFloat = 10, padV: CGFloat = 4
+        let pill = NSRect(x: host.midX - (size.width + padH * 2) / 2, y: host.minY + 6,
+                          width: size.width + padH * 2, height: size.height + padV * 2)
+        NSColor.black.withAlphaComponent(0.62).setFill()
+        let path = NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
+        path.fill()
+        (text as NSString).draw(at: NSPoint(x: pill.minX + padH, y: pill.minY + padV), withAttributes: attrs)
+    }
+}

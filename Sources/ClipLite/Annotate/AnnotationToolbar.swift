@@ -151,4 +151,13 @@ final class AnnotationToolbar: NSPanel {
             highlightTool(first.key)
         }
     }
+
+    // MARK: - 动作按钮高亮（OCR 叠加层激活状态）
+    func setActionHighlight(_ action: ToolbarAction) {
+        for (b, a) in actionButtons { b.contentTintColor = (a == action) ? .controlAccentColor : .secondaryLabelColor }
+    }
+
+    func clearActionHighlight() {
+        for (b, _) in actionButtons { b.contentTintColor = .secondaryLabelColor }
+    }
 }

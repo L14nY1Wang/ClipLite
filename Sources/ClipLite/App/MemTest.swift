@@ -6,7 +6,7 @@ import AppKit
 ///   A. 真实截屏 → 建标注窗 → show → 渲染 → 关闭，观察整屏 baseImage 是否回收
 ///   B. 大图贴图（4032×3024）→ 关闭 → drain 后是否回落到基线
 ///   C. 第二轮贴图（3000×2000）→ 关闭，验证不累积泄漏
-///   D. 贴图 → 识别文字（弹 OCR 面板）→ 关闭贴图，验证 OCR 面板不残留
+///   D. 贴图 → 识别文字（图片原位叠加层，无独立窗口）→ 关闭，验证叠加层不残留
 /// 各步之间让 runloop 转起来，保证 windowWillClose / 通知送达。
 enum MemTest {
     static func run() {
@@ -44,7 +44,7 @@ final class Harness: NSObject, NSApplicationDelegate {
         ocrTestImage = img
         VisionOCR.recognize(img) { [weak self] result in
             switch result {
-            case .success(let t): print("MEMSTEP[E2] OCR 完成 文本长度=\(t.count) \(Harness.memLine())")
+            case .success(let lines): print("MEMSTEP[E2] OCR 完成 行数=\(lines.count) 字数=\(lines.reduce(0) { $0 + $1.text.count }) \(Harness.memLine())")
             case .failure(let e): print("MEMSTEP[E2] OCR 失败 \(e.localizedDescription)")
             }
             self?.afterOCR()
@@ -216,7 +216,7 @@ final class Harness: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: D. 贴图 → 识别文字（弹 OCR 面板）→ 关闭贴图，验证面板不残留
+    // MARK: D. 贴图 → 识别文字（图片原位叠加层，无独立窗口）→ 关闭贴图，验证叠加层不残留
     @MainActor
     private func scenarioD() {
         let w = 1200, h = 800
@@ -232,11 +232,11 @@ final class Harness: NSObject, NSApplicationDelegate {
         print("MEMSTEP[D2] 已发起 OCR（异步），等待回调")
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self = self else { return }
-            let appeared = NSApp.windows.contains { $0 is OCRResultPanel }
-            print("MEMSTEP[D2] OCR 面板出现=\(appeared) windows=\(NSApp.windows.count)")
+            let overlayOn = self.scenarioDPin?.pinView.isOCROverlayActive ?? false
+            print("MEMSTEP[D2] OCR 叠加层激活=\(overlayOn) windows=\(NSApp.windows.count)")
             self.scenarioDPin?.close()
-            let lingering = NSApp.windows.contains { $0 is OCRResultPanel && $0.isVisible }
-            print("MEMSTEP[D3] 关闭贴图后 OCR面板仍可见=\(lingering) windows=\(NSApp.windows.count)")
+            let lingeringWindows = NSApp.windows.count
+            print("MEMSTEP[D3] 关闭贴图后 windows=\(lingeringWindows)")
             self.scenarioDPin = nil
             self.finishOrHold()
         }

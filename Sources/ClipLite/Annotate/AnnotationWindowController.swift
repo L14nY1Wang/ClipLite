@@ -8,7 +8,6 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
     let sizeBar: AnnotationSizeBar
     let screen: NSScreen
     weak var coordinator: AppCoordinator?
-    private var ocrPanel: OCRResultPanel?
 
     init(fullImage: CGImage, screen: NSScreen, initialSelection: NSRect) {
         self.screen = screen
@@ -26,6 +25,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
 
         toolbar.onSelectTool = { [weak self] tool in
             guard let self = self else { return }
+            self.canvas.hideOCROverlay()          // 切工具即退出文字模式
             self.canvas.switchTool(tool)          // 内部先提交编辑中的文字，见 switchTool 注释
             self.setShowSizeBar(tool != .select)  // 选择工具无线宽/字号可调，隐藏大小条
         }
@@ -59,7 +59,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         toolbar.orderOut(nil)
         sizeBar.orderOut(nil)
-        ocrPanel?.orderOut(nil)
+        canvas.hideOCROverlay()
         // 断开 window→canvas 强引用，让 canvas/baseImage 随控制器一起释放，
         // 否则整屏 backing store（22MB@2x）要等 AppKit 内部延迟回收。
         window.contentView = nil
@@ -96,6 +96,8 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
     }
 
     private func handle(_ action: ToolbarAction) {
+        // 点工具/撤销/复制/保存/贴图/取消都先退出文字模式；.ocr 由 runOCR 自身 toggle
+        if action != .ocr, canvas.isOCROverlayActive { canvas.hideOCROverlay() }
         switch action {
         case .undo:  canvas.undo()
         case .copy:  copyAndClose()
@@ -111,6 +113,11 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         case .ocr:   runOCR()
         case .cancel: close()
         }
+    }
+
+    /// 叠加层开关时由画布回调：工具条 OCR 按钮高亮跟随状态。
+    func ocrOverlayVisibilityChanged() {
+        if canvas.isOCROverlayActive { toolbar.setActionHighlight(.ocr) } else { toolbar.clearActionHighlight() }
     }
 
     /// 渲染带标注的最终图 → 写剪贴板 → 关闭。
@@ -152,22 +159,17 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
     }
 
     private func runOCR() {
+        if canvas.isOCROverlayActive { canvas.hideOCROverlay(); return }   // 再点一次 OCR = 退出文字模式
         guard let img = canvas.renderFinal() else { return }
         VisionOCR.recognize(img) { [weak self] result in
             guard let self = self else { return }
-            if self.ocrPanel == nil { self.ocrPanel = OCRResultPanel() }
-            // 蓝框的全局坐标
-            let g = NSRect(x: self.screen.frame.minX + self.canvas.selection.minX,
-                           y: self.screen.frame.minY + self.canvas.selection.minY,
-                           width: self.canvas.selection.width, height: self.canvas.selection.height)
-            // 面板浮在整屏标注窗之上，并停靠蓝框下方
-            let above = NSWindow.Level(rawValue: Int(self.window.level.rawValue) + 1)
-            let text: String
             switch result {
-            case .success(let t): text = t
-            case .failure(let error): text = "识别失败（\(error.localizedDescription)）"
+            case .success(let lines):
+                self.canvas.showOCROverlay(lines: OCRTextOverlay.readingOrder(lines),
+                                           message: lines.isEmpty ? "未识别到文字" : nil)
+            case .failure(let error):
+                self.canvas.showOCROverlay(lines: [], message: "识别失败（\(error.localizedDescription)）")
             }
-            self.ocrPanel?.show(text: text, below: g, level: above)
         }
     }
 }

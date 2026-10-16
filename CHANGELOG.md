@@ -6,13 +6,19 @@
 
 ## [未发布]
 
-内存与 OCR 管道收敛；修复截图会话按键失效、OCR 复制空串、设置窗常驻；标注快捷键文档纠正。
+OCR 改为「图片原位文字叠加层 + 就地划选复制」，删除独立结果弹窗。
 
 ### 新增
-- **`PNGWriter`（`CGImage` 直写 PNG）**：新增 `Sources/ClipLite/Output/PNGWriter.swift`，用 `CGImageDestination` 直接编码，去掉 `NSBitmapImageRep` 的整幅位图拷贝。
+- **OCR 原位叠加层（`Sources/ClipLite/OCR/OCRTextOverlay.swift`）**：识别结果按原位以半透明底白字叠在图片上（技术路线参考开源项目 Umi-OCR 的 `ImageWithText`），在文字上按住拖动即可划选，选中行强调色高亮、marquee 实时跟随；不再弹出任何结果窗口。截图模式与贴图模式分别适配交互路径。
+- **截图/标注模式键盘路径**：`⌘C` / ↩ 复制选中文字（无选中则复制全部），`⌘A` 全选，`Esc` 只退出文字模式（不关窗、不放弃标注），文字模式下 ↩ 不再完成标注；工具条 OCR 按钮激活时高亮。叠加层激活期间鼠标全归叠加层，画线/挪框/缩放一律暂停，避免误触。
+- **贴图模式全鼠标路径**：左键按文字块拖拽划选、**双击某行直接复制该行**（不关窗）、右键菜单「复制选中文字 / 复制全部文字 / 隐藏文字」。贴图是非激活窗口，系统按键不会送达（强行激活会抢焦点，违背 `PinPanel`「从不抢焦点」设计），故不引入键盘路径。
+- **`Clipboard.write(text:)`**：纯文本剪贴板写入（OCR 划选复制用）。
+- **子进程 JSON 协议**：`VisionOCR` 返回 `[OCRLine]`（文字 + 归一化坐标框），`--ocr-worker` stdout 改为 JSON 行数组；OCR 请求 `minimumTextHeight = 0`（截图常含小字，避免整行被 Vision 丢弃，参考 TextGrab）。
 
 ### 变更
-- **OCR 临时 PNG 改直写**：不再绕道 `NSBitmapImageRep`，省掉一份整幅位图。
+- **OCR 结果面板删除**：`Sources/ClipLite/OCR/OCRResultPanel.swift`（`NSPanel` + `NSTextView` 弹窗）整体删除，改由 `OCRTextOverlay` 在图片原位绘制；截图/贴图两个宿主各少一个可抢焦点的窗口。
+- **OCR 子进程协议**：stdout 由纯文本改为 JSON 行数组（携带归一化坐标框），父进程 `VisionOCR.recognize` 返回 `[OCRLine]`。
+- **`PinView` 补 `acceptsFirstMouse`**：应用非激活时 AppKit 会把第一个左键 `mouseDown` 用于激活窗口，贴图视图此前收不到首次点击（拖拽正常是窗口级 `isMovableByWindowBackground` 的假象）——点一下文字行/双击复制都没反应。与标注画保持一致。
 - **OCR 子进程串行化**：同一时刻只跑一个 Vision 子进程，避免连续识图时多个子进程同时驻留、把内存与 CPU 峰值叠起来。
 - **保存 PNG 改直写，且改为弹出保存面板后才渲染**：用户取消面板时不再白渲染一张标注位图。
 - 标注画笔草稿直接改 `draft.points` 存储属性，去掉每帧整份拷贝数组（长笔画由 O(n²) 降为 O(n)）。

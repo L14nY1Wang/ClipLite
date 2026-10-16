@@ -26,7 +26,6 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     var onClose: (() -> Void)?
     /// 切分出的子贴图经此回调交还 PinController 创建（避免控制器反向持有 PinController）
     var onSplit: ((CGImage, NSRect) -> Void)?
-    private var ocrPanel: OCRResultPanel?
 
     init(image: CGImage, frame: NSRect) {
         var f = frame
@@ -46,8 +45,8 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     func show() { panel.orderFrontRegardless() }
 
     func windowWillClose(_ notification: Notification) {
-        // 贴图关闭时连带带走 OCR 面板：可见窗口会被 AppKit 隐式持有，不 orderOut 会永久残留在屏幕上
-        ocrPanel?.orderOut(nil)
+        // 关闭贴图前先撤掉文字叠加层，避免残留的光标矩形/绘制状态挂在即将释放的视图上
+        pinView.hideOCROverlay()
         // 断开 panel→pinView 强引用，让 pinView/cgImage 随控制器释放。
         panel.contentView = nil
         let callback = onClose
@@ -67,25 +66,35 @@ final class PinWindowController: NSObject, NSWindowDelegate {
         panel.invalidateShadow()
     }
 
-    /// 对整张贴图做离线 OCR，结果停靠面板显示。
+    /// 识别文字：结果按原位叠加在贴图上；已在叠加状态则再点一次隐藏（菜单项随之变「隐藏文字」）。
     @objc func recognize() {
-        if ocrPanel == nil { ocrPanel = OCRResultPanel() }
+        if pinView.isOCROverlayActive { pinView.hideOCROverlay(); return }
         let img = pinView.cgImage
         VisionOCR.recognize(img) { [weak self] result in
             guard let self = self else { return }
-            let above = NSWindow.Level(rawValue: Int(self.panel.level.rawValue) + 1)
-            let text: String
             switch result {
-            case .success(let t): text = t
-            case .failure(let error): text = "识别失败（\(error.localizedDescription)）"
+            case .success(let lines):
+                self.pinView.showOCROverlay(lines: OCRTextOverlay.readingOrder(lines),
+                                            message: lines.isEmpty ? "未识别到文字" : nil)
+            case .failure(let error):
+                self.pinView.showOCROverlay(lines: [], message: "识别失败（\(error.localizedDescription)）")
             }
-            self.ocrPanel?.show(text: text, below: self.panel.frame, level: above)
         }
     }
 
+    /// 复制划选文字（无选中则复制全部）
+    @objc func copyOCRText() { pinView.copyOCRSelection() }
+    @objc func copyAllOCRText() { pinView.copyAllOCR() }
+
     func showMenu(event: NSEvent) {
         let m = NSMenu()
-        m.addItem(titled("识别文字", #selector(recognize)))
+        let overlay = pinView.isOCROverlayActive
+        if overlay {
+            m.addItem(titled("复制选中文字", #selector(copyOCRText)))
+            m.addItem(titled("复制全部文字", #selector(copyAllOCRText)))
+            m.addItem(.separator())
+        }
+        m.addItem(titled(overlay ? "隐藏文字" : "识别文字", #selector(recognize)))
         m.addItem(titled("复制图片", #selector(copyImage)))
         m.addItem(titled(pinView.cropMode ? "退出切分" : "切分贴图", #selector(toggleSplit)))
         m.addItem(titled("关闭", #selector(close)))
