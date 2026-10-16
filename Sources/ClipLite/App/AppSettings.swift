@@ -111,16 +111,21 @@ final class AppSettings {
     }
 
     // 开机自启（SMAppService，macOS 13+）
-    var launchAtLogin: Bool {
-        get { SMAppService.mainApp.status == .enabled }
-        set {
-            do {
-                if newValue { try SMAppService.mainApp.register() }
-                else { try SMAppService.mainApp.unregister() }
-            } catch {
-                NSLog("AppSettings: 开机自启切换失败 \(error)")
-            }
+    /// - Returns: 切换是否成功；失败时 setter 不再静默，调用方应告知用户。
+    @discardableResult
+    func setLaunchAtLogin(_ enabled: Bool) -> Error? {
+        do {
+            if enabled { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+            return nil
+        } catch {
+            NSLog("AppSettings: 开机自启切换失败 \(error)")
+            return error
         }
+    }
+
+    var launchAtLogin: Bool {
+        SMAppService.mainApp.status == .enabled
     }
 
     // 上次保存目录（跨进程记忆；App 非沙盒，直接存 URL 字符串即可）

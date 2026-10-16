@@ -26,8 +26,7 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
 
         toolbar.onSelectTool = { [weak self] tool in
             guard let self = self else { return }
-            self.canvas.currentTool = tool
-            self.canvas.selectedID = nil          // 切工具时清除选中态
+            self.canvas.switchTool(tool)          // 内部先提交编辑中的文字，见 switchTool 注释
             self.setShowSizeBar(tool != .select)  // 选择工具无线宽/字号可调，隐藏大小条
         }
         toolbar.onColor = { [weak self] color in self?.canvas.currentColor = color }

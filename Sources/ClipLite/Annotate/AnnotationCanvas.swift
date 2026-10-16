@@ -57,14 +57,27 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     override var isFlipped: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// 切换工具：先归位编辑中的文字。工具条是 nonactivating 面板，点它不会自动结束
+    /// 字段编辑——编辑器会残留、键盘焦点仍留在输入框里，此后画布的 Esc/回车/Delete
+    /// 全部失效，且再按 Esc 会走 cancelOperation 把刚输入的文字直接丢弃。
+    func switchTool(_ tool: AnnotationTool) {
+        commitTextEditorIfNeeded()
+        currentTool = tool
+        selectedID = nil
+    }
+
     // MARK: - 鼠标
     override func mouseDown(with event: NSEvent) {
         commitTextEditorIfNeeded()
         let p = convert(event.locationInWindow, from: nil)
-        if currentTool == .select {
+        // 选择工具：命中元素才走元素选择；点到空白/边框则继续往下，允许拖动/缩放蓝框
+        // （README 承诺「蓝框可拖动移动 / 8 向手柄缩放」，原先 select 模式下直接 return，
+        // 用户切到选择工具后反而挪不动框）
+        if currentTool == .select, selection.contains(p), hitTestItem(at: p) != nil {
             selectMouseDown(p, double: event.clickCount >= 2)
             return
         }
+        if currentTool == .select { selectedID = nil }
         if let h = handleAt(p) {
             mode = .resize(h); startSel = selection; needsDisplay = true; return
         }
@@ -136,8 +149,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             if off.x != 0 || off.y != 0 {
                 if !moveUndoPushed { pushUndo(); moveUndoPushed = true }   // 首次位移才压栈
                 items[idx] = items[idx].moved(by: off)
-                // 马赛克源图绑定原位置像素，移动后失效——按新位置重建（复用 buildMosaic）
-                if items[idx].kind == .mosaic, let m = buildMosaic(items[idx].rect) { items[idx].mosaicSource = m }
+                // 马赛克源图绑定原位置像素，移动后失效——按新位置重建（复用 buildMosaic）。
+                // rect 也要收敛到 selection：buildMosaic 内部取交集，rect 不跟着变就会出现
+                // 「小图铺满大 rect」的拉伸错位（同 mouseUp 的 mosaic 提交路径）。
+                if items[idx].kind == .mosaic {
+                    items[idx].rect = items[idx].rect.intersection(selection)
+                    if let m = buildMosaic(items[idx].rect) { items[idx].mosaicSource = m }
+                }
                 dragAnchor = p
                 needsDisplay = true
             }
@@ -158,6 +176,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 d.rect = normalizeRect(s, p); committed = d.rect.width > 2 && d.rect.height > 2
             case .mosaic:
                 d.rect = normalizeRect(s, p)
+                // 源图只按 rect∩selection 生成，若 rect 伸出蓝框外，绘制却把这张小图铺满
+                // 整个 rect → 马赛克块被拉大、非方形、与底图错位。把 rect 收敛到交集，
+                // 让"生成区"与"绘制区"严格一致（超框部分本就会被最终裁剪掉，视觉无损失）。
+                d.rect = d.rect.intersection(selection)
                 if d.rect.width > 2, d.rect.height > 2 { d.mosaicSource = buildMosaic(d.rect) }
                 committed = d.mosaicSource != nil
             case .arrow: d.points = [s, p]
@@ -204,7 +226,9 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             editingItem = nil
             undoStack.removeLast()
         }
-        editor.removeFromSuperview(); textEditor = nil
+        // 同 commitTextEditorIfNeeded：先摘引用再移除，防 removeFromSuperview 的同步回调重入
+        textEditor = nil
+        editor.removeFromSuperview()
         window?.makeFirstResponder(self); needsDisplay = true
     }
 
@@ -292,7 +316,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         guard let editor = textEditor else { return }
         let str = editor.stringValue
         let origin = NSPoint(x: editor.frame.minX, y: editor.frame.minY)
-        editor.removeFromSuperview(); textEditor = nil
+        // 先摘引用再移除：removeFromSuperview 若同步回调 controlTextDidEndEditing
+        // （移除仍为 first responder 的控件时可能发生），重入的 commitTextEditorIfNeeded
+        // 会因 textEditor 已为 nil 而立刻返回，不会把同一条文字重复入栈。
+        textEditor = nil
+        editor.removeFromSuperview()
         if var editing = editingItem {
             // 再编辑提交：editText 已压栈，此处只回写。空文字 = 删除该元素。
             editingItem = nil

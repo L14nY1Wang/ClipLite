@@ -43,6 +43,9 @@ final class AppCoordinator: NSObject {
     func start() {
         statusItem.coordinator = self
         statusItem.rebuildMenu()
+        // 上次强杀残留的 OCR 临时 PNG（正常路径 defer 已清，只兜 SIGKILL）
+        VisionOCR.cleanupStaleTempFiles()
+
 
         // 首次运行主动发起屏幕录制授权（系统弹窗归属本应用）
         if !ScreenCapture.preflight() {
@@ -51,7 +54,7 @@ final class AppCoordinator: NSObject {
 
         reportHotKeyFailures(applyHotKeys())
 
-        // 自动化接口：`ClipLite --trigger-capture`（供脚本/测试调用）
+        // 自动化接口：`ClipLite --trigger capture|pin|settings`（供脚本/测试调用）
         DistributedNotificationCenter.default().addObserver(self,
                                                             selector: #selector(onTrigger(_:)),
                                                             name: .init("\(Bundle.main.bundleIdentifier ?? "com.lianyi.cliplite.dev").trigger"),
@@ -116,7 +119,10 @@ final class AppCoordinator: NSObject {
     // MARK: - 截图
     @objc func startCapture() {
         stopPermissionRetry() // 用户手动触发新截图时取消 pending 的授权重试
-        guard selection == nil else { return } // 已有进行中的会话则忽略
+        // 标注会话进行中也忽略：旧标注窗若被直接覆盖，其控制器随之释放，
+        // canvas.windowController（weak）与工具条 [weak self] 闭包全部变 nil——
+        // 旧窗既关不掉也不再响应，.screenSaver 层还会连菜单栏一起盖住，只能强退。
+        guard selection == nil, annotation == nil else { return }
         let sel = SelectionController()
         sel.coordinator = self
         selection = sel
@@ -126,6 +132,9 @@ final class AppCoordinator: NSObject {
     /// 选区确认后回调：把整屏截图 + 选区交给标注层（框可在标注时再拖动/缩放）。
     func didFinishSelection(fullImage: CGImage, screen: NSScreen, selectionLocal: NSRect) {
         selection = nil   // 关键：成功路径也要复位，否则 startCapture 的 guard 会永久拦截后续截图
+        // 兜底：万一旧会话仍在（理论上 startCapture 已拦），先关再替换，
+        // 否则它会被 AppKit 隐式保留成关不掉的幽灵窗。
+        annotation?.close()
         let ann = AnnotationWindowController(fullImage: fullImage, screen: screen, initialSelection: selectionLocal)
         ann.coordinator = self
         annotation = ann

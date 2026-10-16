@@ -16,7 +16,9 @@ final class SelectionView: NSView {
     private var anchorGlobal: NSPoint?
     private var selectionGlobal: NSRect?
     private var isDragging = false
-    private var mouseGlobal: NSPoint = .zero
+    // 初值取真实光标位置而非 .zero：主屏 frame 必含 (0,0)，.zero 会让主屏左下角
+    // 一上屏就画出放大镜，且 globalToPixel 得 py=image.height 越界、RGB 恒为 #000000。
+    private var mouseGlobal: NSPoint
     private var snappedRect: NSRect?       // 悬停时命中的窗口矩形（全局）
 
     init(display: ScreenCapture.Display, windowRects: [NSRect], controller: SelectionController) {
@@ -30,6 +32,7 @@ final class SelectionView: NSView {
                                             height: display.screen.frame.height))
         self.scaleX = CGFloat(display.image.width) / display.screen.frame.width
         self.scaleY = CGFloat(display.image.height) / display.screen.frame.height
+        self.mouseGlobal = NSEvent.mouseLocation
         super.init(frame: NSRect(origin: .zero, size: display.screen.frame.size))
         wantsLayer = false
     }
@@ -67,8 +70,13 @@ final class SelectionView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         mouseGlobal = NSEvent.mouseLocation
+        let dragged = isDragging
+        // 无条件复位：微拖（宽或高 ≤4）两个分支都不进，isDragging 会残留为 true，
+        // 之后 mouseMoved/draw 的 !isDragging 门控全部失效——吸附高亮不再更新，
+        // 且 snappedRect 停在 nil，用户下一次单击（窗口吸附）完全无反应，要再点一次才好。
+        isDragging = false
         // 有拖拽 → 用选区；无拖拽 → 用命中的窗口（窗口吸附）
-        if isDragging, let sel = selectionGlobal, sel.width > 4, sel.height > 4 {
+        if dragged, let sel = selectionGlobal, sel.width > 4, sel.height > 4 {
             confirm(rect: sel)
             return
         }

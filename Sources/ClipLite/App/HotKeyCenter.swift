@@ -4,6 +4,9 @@ import Carbon.HIToolbox
 /// 全局热键中心。基于 Carbon RegisterEventHotKey，注册时无需辅助功能权限。
 final class HotKeyCenter {
     static let shared = HotKeyCenter()
+    /// 两个功能热键的固定 id（register/unregister 成对使用，勿改：会使用户保存的热键失效）。
+    static let screenshotID: UInt32 = 1
+    static let pinID: UInt32 = 2
 
     /// 把 NSEvent 修饰键转成 Carbon RegisterEventHotKey 需要的掩码。
     static func carbonFlags(from f: NSEvent.ModifierFlags) -> UInt32 {
@@ -23,7 +26,9 @@ final class HotKeyCenter {
     /// - Returns: 注册是否成功。失败通常意味着该组合已被系统或其它 App 占用。
     @discardableResult
     func register(id: UInt32, keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) -> Bool {
-        installIfNeeded()
+        // 事件处理器没装上，热键注册了也收不到——必须如实报失败，
+        // 否则上层判成功、不弹提示，用户面对一个永久按不响的快捷键。
+        guard installIfNeeded() else { return false }
         unregister(id: id)
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: signature, id: id)
@@ -50,8 +55,10 @@ final class HotKeyCenter {
     }
 
     // MARK: - Carbon 事件处理
-    private func installIfNeeded() {
-        guard eventHandlerRef == nil else { return }
+    /// - Returns: 事件处理器是否就绪（已装或本次装成功）。
+    @discardableResult
+    private func installIfNeeded() -> Bool {
+        guard eventHandlerRef == nil else { return true }
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                  eventKind: UInt32(kEventHotKeyPressed))
         let callback: EventHandlerUPP = { _, eventRef, userData in
@@ -77,6 +84,8 @@ final class HotKeyCenter {
                                          &eventHandlerRef)
         if status != noErr {
             NSLog("HotKeyCenter: InstallEventHandler failed status=\(status)")
+            return false
         }
+        return true
     }
 }

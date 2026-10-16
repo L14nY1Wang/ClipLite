@@ -109,6 +109,25 @@ extension OCRError: LocalizedError {
     }
 }
 
+extension VisionOCR {
+    /// 清扫上次强杀残留的 OCR 临时 PNG。正常路径 `defer` 必清，但父进程被 SIGKILL 时
+    /// （或子进程 exit 前父进程先死）会漏；只删 1 小时前的，避免误伤并发识别中的文件。
+    static func cleanupStaleTempFiles() {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: fm.temporaryDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles) else { return }
+        let cutoff = Date().addingTimeInterval(-3600)
+        for url in files where url.lastPathComponent.hasPrefix("cliplite-ocr-")
+            && url.pathExtension == "png" {
+            guard let d = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                  d < cutoff else { continue }
+            try? fm.removeItem(at: url)
+        }
+    }
+}
+
 /// 子进程入口：从 PNG 路径惰性加载 CGImage。
 enum OCRWorker {
     static func loadImage(path: String) -> CGImage? {

@@ -82,7 +82,10 @@ final class OCRResultPanel: NSPanel {
         if y < sf.minY + 8 { y = rect.maxY + 10 }
         y = min(max(y, sf.minY + 8), sf.maxY - panelH - 8)
         setFrameOrigin(NSPoint(x: x, y: y))
-        makeKeyAndOrderFront(nil)
+        // 只置前不抢 key：面板是 .nonactivatingPanel，按钮/划选靠鼠标即可；
+        // 若 makeKeyAndOrderFront，标注画布失去 key，之后回车（完成）/Esc（放弃）全无反应，
+        // 用户必须先用鼠标点一下画布才能继续。
+        orderFrontRegardless()
     }
 
     @objc private func copyAll() {

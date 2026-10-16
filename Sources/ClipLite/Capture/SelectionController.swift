@@ -5,6 +5,10 @@ import CoreGraphics
 final class SelectionController {
     weak var coordinator: AppCoordinator?
     private var windows: [SelectionWindow] = []
+    /// 自己记录的 push/pop 配对。原来用 `NSCursor.current == .crosshair` 判断该不该 pop，
+    /// 但那是**对象比较**：关闭瞬间若当前光标已被他处改过（如漏到屏外时底层应用的 I 型），
+    /// pop 被跳过 → crosshair 永久留在全局光标栈，之后别的 push/pop 会把它翻成系统光标。
+    private var cursorPushed = false
 
     func start() {
         guard ScreenCapture.preflight() || ScreenCapture.request() else {
@@ -52,6 +56,7 @@ final class SelectionController {
             return
         }
         NSCursor.crosshair.push()
+        cursorPushed = true
         var made: [SelectionWindow] = []
         for d in displays {
             let rects = windowList.filter { $0.intersects(d.screen.frame) }
@@ -95,8 +100,8 @@ final class SelectionController {
             w.close()
         }
         windows.removeAll()
-        // 弹出 crosshair 时压栈，关闭时弹栈恢复
-        if NSCursor.current == NSCursor.crosshair { NSCursor.pop() }
+        // 弹出 crosshair 时压栈，关闭时弹栈恢复（按自有标志，见 cursorPushed 注释）
+        if cursorPushed { NSCursor.pop(); cursorPushed = false }
     }
 
     // MARK: - 窗口列表快照（用于窗口吸附点击）

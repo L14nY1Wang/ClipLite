@@ -214,6 +214,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         recording = kind
         sender.title = "按下新快捷键…"
         sender.contentTintColor = .controlAccentColor
+        // 录制期间先注销全局热键：local monitor 只收本进程事件，若按下的组合正是当前
+        // 截图/贴图热键，Carbon 会直接把动作触发掉（弹出一个盖住设置窗的全屏选区），
+        // 而不是被录入。stopRecording 时恢复。
+        coordinator?.hotKeys.unregister(id: HotKeyCenter.screenshotID)
+        coordinator?.hotKeys.unregister(id: HotKeyCenter.pinID)
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
             if Int(event.keyCode) == kVK_Escape { self.stopRecording(); return nil }
@@ -231,6 +236,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         recording = nil
         recorders.values.forEach { $0.contentTintColor = .controlColor }
         refreshTitles()
+        coordinator?.applyHotKeys()   // 恢复被 beginRecord 注销的全局热键（保存的新值已生效）
     }
 
     private func save(_ kind: Kind, _ hk: HotKey) {
@@ -267,8 +273,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func toggleLaunch(_ sender: NSSwitch) {
-        AppSettings.shared.launchAtLogin = (sender.state == .on)
-        refreshTitles()
+        let error = AppSettings.shared.setLaunchAtLogin(sender.state == .on)
+        refreshTitles()   // 失败时开关弹回真实状态（与 SMAppService.status 一致）
+        // 原来失败只 NSLog，用户只看到开关自己跳回去、没有任何解释
+        if let error {
+            let alert = NSAlert()
+            alert.messageText = "开机自启设置失败"
+            alert.informativeText = "\(error.localizedDescription)\n\n"
+                + "若曾在「系统设置 → 通用 → 登录项」里禁用过 ClipLite，需要在那里重新允许。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "好")
+            alert.runModal()
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
