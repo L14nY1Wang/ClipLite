@@ -19,6 +19,9 @@ final class SelectionWindow: NSWindow {
         level = .screenSaver
         backgroundColor = .clear
         hasShadow = false
+        // ponytail: isOpaque 曾试改 true 想压 backing store，A/B 实测（2026-10-16，3 屏）
+        // footprint 150.1MB vs 149.8MB 无差别——backing store 由窗口服务器持有，不计本进程 footprint。
+        // 见 docs/MEMORY-AUDIT.md §4.7。保持 transparent：clear 背景合成需要它。
         isOpaque = false
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true

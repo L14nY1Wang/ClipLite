@@ -119,12 +119,15 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         case let .resize(h):
             selection = clampSize(resize(h, to: p)); onSelectionChanged?(); needsDisplay = true
         case .draw:
+            // pen 直接改存储属性：draft 是值类型，每帧 `draft = d` 会整份拷贝 points 数组，长笔画退化成 O(n²)
+            if currentTool == .pen {
+                draft?.points.append(p); needsDisplay = true; return
+            }
             guard var d = draft, let s = draftStart else { return }
             switch currentTool {
-            case .pen: d.points.append(p)
             case .rect, .ellipse, .mosaic: d.rect = normalizeRect(s, p)
             case .arrow: d.points = [s, p]
-            case .text, .number, .select: break
+            case .pen, .text, .number, .select: break
             }
             draft = d; needsDisplay = true
         case let .itemMove(id):

@@ -54,6 +54,10 @@ jobs:
           fi
           echo "EXPECTED_VERSION=$TAG_VER" >> "$GITHUB_ENV"
 
+      - name: Run tests
+        if: steps.skip.outputs.exists == 'false'
+        run: swift test
+
       - name: Set up signing keychain
         if: steps.skip.outputs.exists == 'false' && env.HAS_DEV_ID_CERT == 'true'
         env:

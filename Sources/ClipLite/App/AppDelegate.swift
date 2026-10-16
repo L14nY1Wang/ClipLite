@@ -183,11 +183,24 @@ final class AppCoordinator: NSObject {
         guard let img = Clipboard.readImage() else { return }
         let pt = NSEvent.mouseLocation
         let scale = NSScreen.backingScaleFactor(at: pt)
-        let sizePt = NSSize(width: CGFloat(img.width) / scale, height: CGFloat(img.height) / scale)
+        var sizePt = NSSize(width: CGFloat(img.width) / scale, height: CGFloat(img.height) / scale)
+        let screen = NSScreen.screens.first { $0.frame.contains(pt) } ?? NSScreen.main
+        guard let screen else { return }
+        let vis = screen.visibleFrame, sf = screen.frame
+        // 贴图窗口不可滚动，比屏幕还大的图会把手柄挤到屏外，用户再也缩不回来——等比缩到可见区内
+        let fit = min(vis.width / sizePt.width, vis.height / sizePt.height)
+        if fit < 1 {
+            sizePt.width *= fit
+            sizePt.height *= fit
+        }
         let frame = NSRect(x: pt.x - sizePt.width / 2,
                            y: pt.y - sizePt.height / 2,
                            width: sizePt.width, height: sizePt.height)
-        pinController.pin(image: img, at: frame)
+        // 居中后整体夹进该屏：min/max 夹住保证窗口完整可见（含右下角手柄）
+        var clamped = frame
+        clamped.origin.x = min(max(clamped.origin.x, sf.minX), sf.maxX - clamped.width)
+        clamped.origin.y = min(max(clamped.origin.y, sf.minY), sf.maxY - clamped.height)
+        pinController.pin(image: img, at: clamped)
     }
 
     // MARK: - 菜单动作

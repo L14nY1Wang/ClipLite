@@ -7,8 +7,10 @@ import Foundation
 /// 走子进程：Vision 模型常驻 ~52MB，进程内无法卸载；放到子进程里，识别完随 exit
 /// 自动回收，主进程 footprint 不再增长。序列化用临时 PNG（一张 1133×744 约 200–500KB）。
 enum VisionOCR {
+    /// 串行队列：Vision 子进程常驻 ~52MB，并发识别会同时拉起多个子进程；同一时刻只跑一个。
+    private static let queue = DispatchQueue(label: "com.cliplite.ocr", qos: .userInitiated)
     static func recognize(_ image: CGImage, completion: @escaping (Result<String, Error>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        queue.async {
             do {
                 let text = try recognizeInSubprocess(image)
                 DispatchQueue.main.async { completion(.success(text)) }
@@ -22,9 +24,7 @@ enum VisionOCR {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cliplite-ocr-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
-        let rep = NSBitmapImageRep(cgImage: image)
-        guard let png = rep.representation(using: .png, properties: [:]) else { throw OCRError.pngEncodeFailed }
-        try png.write(to: url)
+        try PNGWriter.write(image, to: url)
 
         guard let exe = Bundle.main.executableURL else { throw OCRError.noExecutable }
         let p = Process()
@@ -55,7 +55,12 @@ enum VisionOCR {
         // 超时保护：30 秒未退出则 terminate，避免子进程卡死导致父进程永久挂起。
         let deadline = DispatchTime.now() + .seconds(30)
         let timeout = DispatchWorkItem { [weak p] in
-            if p?.isRunning == true { p?.terminate() }
+            guard let p = p, p.isRunning else { return }
+            p.terminate()
+            // 子进程可能忽略 SIGTERM，此时 waitUntilExit 会永久挂起串行队列；0.5s 后强杀兜底。
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(500)) {
+                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            }
         }
         DispatchQueue.global().asyncAfter(deadline: deadline, execute: timeout)
 
@@ -88,7 +93,6 @@ enum VisionOCR {
 }
 
 enum OCRError: Error {
-    case pngEncodeFailed
     case noExecutable
     case workerFailed(status: Int, stderr: String = "")
 }

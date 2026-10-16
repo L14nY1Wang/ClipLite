@@ -120,7 +120,6 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
     func close() { window.close() }
 
     private func saveFile() {
-        guard let img = canvas.renderFinal() else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         let fmt = DateFormatter()
@@ -128,16 +127,21 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
         fmt.dateFormat = "yyyy-MM-dd HH-mm-ss"
         panel.nameFieldStringValue = "ClipLite \(fmt.string(from: Date())).png"
         panel.directoryURL = AppSettings.shared.lastSaveDirectory
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let rep = NSBitmapImageRep(cgImage: img)
-        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        // 标注窗在 .screenSaver 层整屏覆盖，普通层级的保存面板会被盖住（点「保存」看似没反应），临时抬到其上一层
+        panel.level = NSWindow.Level(rawValue: window.level.rawValue + 1)
+        let response = panel.runModal()
+        panel.level = .normal
+        // 先拿 URL 再渲染：挂起期间不驻留整幅渲染结果（4K 选区 13~48MB），取消保存则完全不分配
+        guard response == .OK, let url = panel.url else { return }
+        guard let img = canvas.renderFinal() else { return }
         do {
-            try png.write(to: url)
+            try PNGWriter.write(img, to: url)
         } catch {
             NSLog("ClipLite: 保存 PNG 失败 \(url.path): \(error)")
             let alert = NSAlert()
             alert.messageText = "保存失败"
             alert.informativeText = "无法写入 \(url.path)：\(error.localizedDescription)"
+            alert.window.level = NSWindow.Level(rawValue: window.level.rawValue + 1)
             alert.runModal()
             return  // 不关窗，用户可重试
         }

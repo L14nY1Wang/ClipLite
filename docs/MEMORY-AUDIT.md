@@ -125,6 +125,17 @@ grep 'MEMSTEP\[A' /tmp/mt.out
 
 两者都是**有界、可复用**的缓存：下次用还能省下重新编译/重新分配的开销，这也是速率在 10 轮后掉到近乎 0 的原因。要压低只能反向「用完主动清」（丢弃管线缓存 / `malloc_zone_pressure_relief`——后者实测回收 0 字节，因为页已在 malloc 手里而不是 OS 手里）。**不改。**
 
+## 4.7 A/B 实测：已被证伪的优化假设（2026-10-16）
+
+以下两条曾分别由子智能体调研提出，`--memtest` A/B 后**均无收益**，记录以免重复尝试：
+
+| 尝试 | 假设 | 实测（3 屏，改动前 → 改动后） | 结论 |
+|---|---|---|---|
+| `SelectionWindow.isOpaque = true` | 非透明窗口多留一条合成路径，opaque 可省 backing store | 覆盖窗峰值 149.8 → 150.1 MB（噪声内）；标注 49.7 → 50.0 MB | **证伪**：backing store 由窗口服务器持有，不计入进程 footprint；`isOpaque` 已回滚为 `false`（clear 背景合成需要它） |
+| `teardown`/`windowWillClose` 补 `contentView = nil` | 断开窗口→视图强引用可提前回收 | §4.6 原文即记录 A/B「无差别」（149.6→15.4 vs 150.8→15.6 MB） | **证伪**：AppKit 自行回收，无需改动 |
+
+结论（对后续优化的指导）：**进程内 footprint 的下降空间已很薄**。剩余峰值（三屏 149.6MB）的大头是窗口服务器侧的 backing store，本进程无法通过 AppKit 标志压缩；能继续优化的只有进程内**瞬时分配**——即 `NSBitmapImageRep(cgImage:)` 这类整幅位图中转（4K 选区约 13~48MB 一份）。后续内存工作应优先审查这类中转，而非窗口/合成标志。
+
 ## 5. ScreenCaptureKit 成本分解（分层实测）
 
 用 `SCScreenshotManager.captureImage` 一次性捕获，分层 footprint：

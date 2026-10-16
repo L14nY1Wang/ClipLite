@@ -4,7 +4,7 @@ PLIST    := Resources/Info.plist
 BUNDLE_ID ?= com.lianyi.cliplite.dev
 APP_NAME  ?= ClipLite Dev
 
-.PHONY: all build app run clean selftest sign dmg
+.PHONY: all build app run clean selftest test memtest dmg
 
 all: app
 
@@ -56,6 +56,14 @@ dmg:
 # 端到端自测：截屏 → 裁剪中心 300x150 → 写 PNG 到 /tmp → 打印内存
 selftest: app
 	@"$(APP)/Contents/MacOS/ClipLite" --selftest
+
+# 单元测试（SwiftPM testTarget；不产出 .app，直接走 swift test）
+test:
+	swift test
+
+# 内存实测：以 LaunchServices 启动开发版并逐步打印 footprint（--memtest）
+memtest: app
+	@open -W --stdout /tmp/mt.out -a "$$PWD/$(APP)" --args --memtest && grep 'MEMSTEP\[' /tmp/mt.out
 
 clean:
 	@rm -rf build .build

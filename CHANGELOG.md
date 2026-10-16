@@ -4,6 +4,32 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布]
+
+内存与 OCR 管道收敛，标注快捷键文档纠正。
+
+### 新增
+- **`PNGWriter`（`CGImage` 直写 PNG）**：新增 `Sources/ClipLite/Output/PNGWriter.swift`，用 `CGImageDestination` 直接编码，去掉 `NSBitmapImageRep` 的整幅位图拷贝。
+
+### 变更
+- **OCR 临时 PNG 改直写**：不再绕道 `NSBitmapImageRep`，省掉一份整幅位图。
+- **OCR 子进程串行化**：同一时刻只跑一个 Vision 子进程，避免连续识图时多个子进程同时驻留、把内存与 CPU 峰值叠起来。
+- **保存 PNG 改直写，且改为弹出保存面板后才渲染**：用户取消面板时不再白渲染一张标注位图。
+- 标注画笔草稿直接改 `draft.points` 存储属性，去掉每帧整份拷贝数组（长笔画由 O(n²) 降为 O(n)）。
+### 修复
+- **保存面板 / 失败告警被全屏标注窗挡住**：告警窗层级 +1，不再被覆盖层压在下面。
+- **`⌥2` 贴超大图手柄跑到屏幕外**：新窗口先钳到所在屏可见区域并等比缩小，右下角缩放柄始终可用。
+- **F 键热键标签显示为 `Key96`**：`HotKeyLabel` 昔用 `kVK_F1…kVK_F12` 区间判断，而 F 键物理码非连续（F5=96、F9=101…），区间恒为空；改为显式查表。
+### 内存（实测）
+- 全链路 footprint 与改动前基本持平（三屏覆盖窗峰值 150.1→149.8MB、标注 49.7→50.0MB、贴图大图 240.3→240.1MB）：三屏峰值主要由窗口服务器持有的 backing store 构成，不计入进程 footprint，此前「`isOpaque=true` 可压峰值」的假设经 A/B **证伪**（见 `docs/MEMORY-AUDIT.md` §4.7），已回滚。本次内存收益集中在**瞬时分配**：OCR/保存各去掉一份整幅 `NSBitmapImageRep` 拷贝（4K 选区约 13~48MB），保存面板取消时不再渲染。
+### 文档
+- `README.md` 更正快捷键口径：「完成标注并复制」只对应回车；`Esc` 实为**放弃标注并关闭**（有选中元素时先取消选中），原文误写为「回车 / `Esc`」。
+
+### 工程
+- `Makefile` 新增 `test`（`swift test`）与 `memtest`（`--memtest` 逐步 footprint）目标，删掉 `.PHONY` 中并不存在的 `sign`。
+- release 流程在构建 DMG 前先跑 `swift test`（此前全程不跑测试）。
+- `.gitignore` 补 `*.p12` / `*.p8` / `*.keychain` / `*.cer` / `*.mobileprovision`，避免发布会话产生的签名凭据被误提交。
+
 ## [0.3.0] - 2026-09-28
 
 可靠性与发布工程化：热键失败可见、tap 自动同步、测试基线、文档口径对齐。

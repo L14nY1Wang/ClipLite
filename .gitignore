@@ -17,5 +17,12 @@ xcuserdata/
 dist/
 *.dmg
 
+# 签名 / 公证凭据（发布流程在工作区临时生成，勿提交）
+*.p12
+*.p8
+*.keychain
+*.cer
+*.mobileprovision
+
 # 临时
 *.log

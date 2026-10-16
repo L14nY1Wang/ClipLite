@@ -69,9 +69,11 @@ enum HotKeyLabel {
         case kVK_UpArrow: return "↑"
         case kVK_DownArrow: return "↓"
         default:
-            if kc >= UInt32(kVK_F1) && kc <= UInt32(kVK_F12) {
-                return "F\(kc - UInt32(kVK_F1) + 1)"
-            }
+            // F 键物理键码非连续（kVK_F5=96、kVK_F9=101…），nums 数字与 F1 顺序无关，
+            // 昔日的区间判断恒为空——设成 F 键时菜单显示 "Key96" 而非 "F5"。
+            let fKeys = [kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5,
+                         kVK_F6, kVK_F7, kVK_F8, kVK_F9, kVK_F10, kVK_F11, kVK_F12]
+            if let n = fKeys.firstIndex(of: Int(kc)) { return "F\(n + 1)" }
             return "Key\(kc)"
         }
     }
