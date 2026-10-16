@@ -143,6 +143,8 @@ final class PinView: NSView {
     /// 复制划选文字；无选中时复制全部（同 Umi-OCR，避免「点了没反应」）。返回复制字数。
     @discardableResult
     func copyOCRSelection() -> Int {
+        // 空结果不写剪贴板：否则会把用户原有剪贴板内容清成空串（真·数据丢失）
+        guard !ocrLines.isEmpty else { return 0 }
         let hasSelection = !ocrSelected.isEmpty
         let count = OCRTextOverlay.selectedCharCount(lines: ocrLines, indices: ocrSelected)
         Clipboard.write(text: OCRTextOverlay.copyText(lines: ocrLines, indices: ocrSelected))
