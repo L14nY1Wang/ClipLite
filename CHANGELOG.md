@@ -6,7 +6,7 @@
 
 ## [未发布]
 
-内存与 OCR 管道收敛，标注快捷键文档纠正。
+内存与 OCR 管道收敛；修复截图会话按键失效、OCR 复制空串、设置窗常驻；标注快捷键文档纠正。
 
 ### 新增
 - **`PNGWriter`（`CGImage` 直写 PNG）**：新增 `Sources/ClipLite/Output/PNGWriter.swift`，用 `CGImageDestination` 直接编码，去掉 `NSBitmapImageRep` 的整幅位图拷贝。
@@ -20,6 +20,9 @@
 - **保存面板 / 失败告警被全屏标注窗挡住**：告警窗层级 +1，不再被覆盖层压在下面。
 - **`⌥2` 贴超大图手柄跑到屏幕外**：新窗口先钳到所在屏可见区域并等比缩小，右下角缩放柄始终可用。
 - **F 键热键标签显示为 `Key96`**：`HotKeyLabel` 昔用 `kVK_F1…kVK_F12` 区间判断，而 F 键物理码非连续（F5=96、F9=101…），区间恒为空；改为显式查表。
+- **⌥1 后按 `Esc`/回车无反应**：`accessory` 应用不会因弹窗而自动成为前台。从别的应用触发截图时，本进程不是活跃应用，`Esc`/回车全部发给此前的前台应用——覆盖层在屏但**关不掉、也无法完成**，只能靠点击。`present()` 与标注层 `show()` 补 `NSApp.activate(ignoringOtherApps: true)`（`showFailure` 一直有这句，主路径漏了）。A/B 实测：无此行 149.7MB 不回落，有此行 `Esc` 后回落到 18.5MB。
+- **OCR「复制全部」可能复制出空串**：原用 `textView.string == "未识别到文字"` 判定占位，截图里真印着这六个字时真实结果会被当占位丢弃。改用 `isPlaceholder` 标志。
+- **设置窗开过一次后常驻不释放**：`settingsWC` 为 `lazy var` 强持有，关窗只 `orderOut`，窗口与整个视图树一直背着。改为懒建 + `windowWillClose` 时经 `onClose` 回调置 nil。
 ### 内存（实测）
 - 全链路 footprint 与改动前基本持平（三屏覆盖窗峰值 150.1→149.8MB、标注 49.7→50.0MB、贴图大图 240.3→240.1MB）：三屏峰值主要由窗口服务器持有的 backing store 构成，不计入进程 footprint，此前「`isOpaque=true` 可压峰值」的假设经 A/B **证伪**（见 `docs/MEMORY-AUDIT.md` §4.7），已回滚。本次内存收益集中在**瞬时分配**：OCR/保存各去掉一份整幅 `NSBitmapImageRep` 拷贝（4K 选区约 13~48MB），保存面板取消时不再渲染。
 ### 文档

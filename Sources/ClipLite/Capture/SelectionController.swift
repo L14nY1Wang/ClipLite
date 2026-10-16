@@ -37,7 +37,6 @@ final class SelectionController {
         alert.informativeText = detail
         alert.addButton(withTitle: "打开录屏设置")
         alert.addButton(withTitle: "取消")
-        NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             coordinator?.openScreenCapturePrefs()
             if isPermissionIssue {
@@ -68,6 +67,10 @@ final class SelectionController {
         let keyWin = made.first { $0.frame.contains(cursor) } ?? made.first
         keyWin?.makeKeyAndOrderFront(nil)
         if let kv = keyWin, let v = kv.contentView { kv.makeFirstResponder(v) }
+        // accessory 应用不会因弹窗而自动成为前台：⌥1 从别的应用触发时，本进程不是活跃应用，
+        // Esc/回车会发给此前的前台应用（A/B 实测：无此行 overlay 在屏但按键全被 Safari 吃掉，
+        // 149.7MB 不回落；有此行 Esc 正常关闭，回落到 18.5MB）。showFailure 一直有这句，主路径漏了。
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - 回调

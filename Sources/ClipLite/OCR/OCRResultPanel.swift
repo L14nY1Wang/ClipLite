@@ -7,6 +7,9 @@ final class OCRResultPanel: NSPanel {
     private let panelW: CGFloat = 400
     private let panelH: CGFloat = 260
     private let headerH: CGFloat = 30
+    /// 当前显示的是否为占位文案。用标志而非字符串比较：
+    /// 截图里真印着「未识别到文字」时，比较法会把真实结果当占位、复制出空串。
+    private var isPlaceholder = false
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: panelW, height: panelH),
@@ -60,6 +63,7 @@ final class OCRResultPanel: NSPanel {
     /// 停靠显示在 rect（全局点坐标）下方，放不下放上方。level 需高于宿主窗口以浮在其上。
     func show(text: String, below rect: NSRect, level: NSWindow.Level) {
         self.level = level
+        isPlaceholder = text.isEmpty
         if text.isEmpty {
             // 空结果给明确占位，避免「面板弹出却一片空白」被误认为功能失效
             let placeholder = NSAttributedString(string: "未识别到文字", attributes: [
@@ -84,8 +88,8 @@ final class OCRResultPanel: NSPanel {
     @objc private func copyAll() {
         let pb = NSPasteboard.general
         pb.clearContents()
-        // 占位文案不进剪贴板：空结果复制空串
-        let s = textView.string == "未识别到文字" ? "" : textView.string
+        // 占位文案不进剪贴板：空结果复制空串（真实结果即使与之同文也照常复制）
+        let s = isPlaceholder ? "" : textView.string
         pb.setString(s, forType: .string)
     }
 

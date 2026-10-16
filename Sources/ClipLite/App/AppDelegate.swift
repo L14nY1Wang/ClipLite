@@ -28,7 +28,17 @@ final class AppCoordinator: NSObject {
     private var selection: SelectionController?
     private var annotation: AnnotationWindowController?
     private let pinController = PinController()
-    private lazy var settingsWC = SettingsWindowController(coordinator: self)
+    private var settingsWC: SettingsWindowController?
+
+    /// 设置窗懒建 + 关窗即释放：它强持窗口与整个视图树，常驻菜单栏应用
+    /// 首次开过设置后不该一直背着这 ~1MB。下次 showSettings 重建。
+    private func settingsWindow() -> SettingsWindowController {
+        if let settingsWC { return settingsWC }
+        let wc = SettingsWindowController(coordinator: self)
+        wc.onClose = { [weak self] in self?.settingsWC = nil }
+        settingsWC = wc
+        return wc
+    }
 
     func start() {
         statusItem.coordinator = self
@@ -205,7 +215,7 @@ final class AppCoordinator: NSObject {
 
     // MARK: - 菜单动作
     @objc func showSettings() {
-        settingsWC.showAndActivate()
+        settingsWindow().showAndActivate()
     }
 
     @objc func openScreenCapturePrefs() {

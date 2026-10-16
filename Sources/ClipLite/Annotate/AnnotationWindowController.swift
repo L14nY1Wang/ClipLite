@@ -39,6 +39,9 @@ final class AnnotationWindowController: NSObject, NSWindowDelegate {
     func show() {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(canvas)
+        // 同 SelectionController.present：标注窗由框选确认进入，本进程可能仍非前台，
+        // 不激活则 Esc（放弃）/回车（完成并复制）会被此前的前台应用收走。
+        NSApp.activate(ignoringOtherApps: true)
         // 工具条/大小条必须浮在整屏标注窗之上，否则会被 .screenSaver 层覆盖
         let above = NSWindow.Level(rawValue: Int(window.level.rawValue) + 1)
         toolbar.level = above

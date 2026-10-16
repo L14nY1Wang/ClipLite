@@ -7,6 +7,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private weak var coordinator: AppCoordinator?
     private var recorders: [Kind: NSButton] = [:]
+    /// 关窗时通知协调中枢释放本控制器（懒建懒销，避免常驻应用一直背着窗口视图树）。
+    var onClose: (() -> Void)?
     private var recording: Kind?
     private var monitor: Any?
     private let launchSwitch = NSSwitch()
@@ -274,6 +276,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window?.level = .normal
         // 关设置后回到“仅菜单栏常驻”
         NSApp.setActivationPolicy(.accessory)
+        onClose?()
     }
 
     func showAndActivate() {
