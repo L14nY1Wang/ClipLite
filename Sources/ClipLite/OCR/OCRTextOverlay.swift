@@ -77,7 +77,7 @@ enum OCRTextOverlay {
     /// 逐字绘制叠加层（选中按字符高亮）。`showText=false` 时只画选中底色、不画文字——
     /// 即「隐藏叠字、看原图」，选中区域仍以强调色标出，不影响划选与复制。
     static func drawChars(lines: [OCRLine], selected: OCRCharSelection, host: NSRect,
-                          showText: Bool, hint: String?, flash: String?) {
+                          showText: Bool) {
         for (li, line) in lines.enumerated() {
             guard !line.chars.isEmpty else {
                 // 无字符粒度数据：退化为整行绘制，保证老结果仍可用
@@ -114,7 +114,6 @@ enum OCRTextOverlay {
                 }
             }
         }
-        if let tip = flash ?? hint { drawPill(tip, in: host) }
     }
 
     /// 绘制居中的占位/失败文案（空结果、识别失败），避免「点了 OCR 什么都没发生」。
@@ -143,19 +142,5 @@ enum OCRTextOverlay {
         while measure(ps).height > box.height, guardCount < 20 { ps -= 1; guardCount += 1 }
         while measure(ps).width > box.width, guardCount < 40 { ps -= 1; guardCount += 1 }
         return NSFont.systemFont(ofSize: max(3, ps))
-    }
-
-    /// 底部居中提示 pill（黑底白字小圆角）。
-    private static func drawPill(_ text: String, in host: NSRect) {
-        let font = NSFont.systemFont(ofSize: 11)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-        let size = (text as NSString).size(withAttributes: attrs)
-        let padH: CGFloat = 10, padV: CGFloat = 4
-        let pill = NSRect(x: host.midX - (size.width + padH * 2) / 2, y: host.minY + 6,
-                          width: size.width + padH * 2, height: size.height + padV * 2)
-        NSColor.black.withAlphaComponent(0.62).setFill()
-        let path = NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
-        path.fill()
-        (text as NSString).draw(at: NSPoint(x: pill.minX + padH, y: pill.minY + padV), withAttributes: attrs)
     }
 }

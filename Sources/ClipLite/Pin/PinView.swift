@@ -26,18 +26,11 @@ final class PinView: NSView {
     private var ocrMessage: String?      // 空结果/失败提示（lines 为空时显示）
     private var ocrMarquee: NSRect?
     private var ocrDragStart: NSPoint?
-    private var ocrFlash: String?
-    private var ocrShowText = true       // false = 隐藏叠字看原图（选中仍高亮）
+    private var ocrShowText = false      // 默认隐藏叠字（原图优先，选中仍高亮）
     private var ocrActive = false
     var isOCROverlayActive: Bool { ocrActive }
     var ocrHasCharGranularity: Bool { ocrLines.contains { !$0.chars.isEmpty } }
     var ocrTextVisible: Bool { ocrShowText }
-    /// 底部操作提示：随「是否显示叠字」切换文案（贴图无键盘，隐藏/显示走右键菜单）。
-    private var ocrHint: String {
-        ocrShowText
-            ? "拖动逐字选择 · 双击行复制 · 右键菜单复制/隐藏叠字"
-            : "拖动逐字选择 · 双击行复制 · 右键菜单复制/显示叠字"
-    }
 
     init(image: CGImage, baseSize: NSSize) {
         self.cgImage = image
@@ -79,7 +72,7 @@ final class PinView: NSView {
                 OCRTextOverlay.drawMessage(msg, in: bounds)
             } else {
                 OCRTextOverlay.drawChars(lines: ocrLines, selected: ocrCharSel, host: bounds,
-                                         showText: ocrShowText, hint: ocrHint, flash: ocrFlash)
+                                         showText: ocrShowText)
                 if let m = ocrMarquee {
                     NSColor.black.withAlphaComponent(0.2).setFill()
                     NSBezierPath(rect: m).fill()
@@ -132,9 +125,8 @@ final class PinView: NSView {
         ocrActive = true
         ocrSelected = []
         ocrCharSel = OCRCharSelection()
-        ocrShowText = true
+        ocrShowText = false          // 默认隐藏叠字：原图优先，选中仍以强调色标出
         ocrMarquee = nil
-        ocrFlash = nil
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
@@ -146,11 +138,11 @@ final class PinView: NSView {
         ocrCharSel = OCRCharSelection()
         ocrMarquee = nil
         ocrDragStart = nil
-        ocrFlash = nil
         ocrActive = false
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
+
 
     /// 切换「显示/隐藏叠字」：隐藏后只看原图，选中区域仍以强调色标出，划选复制不受影响。
     func toggleOCRText() {
@@ -163,7 +155,6 @@ final class PinView: NSView {
     func copyOCRSelection() -> Int {
         // 空结果不写剪贴板：否则会把用户原有剪贴板内容清成空串（真·数据丢失）
         guard !ocrLines.isEmpty else { return 0 }
-        let hasSelection = ocrHasCharGranularity ? !ocrCharSel.isEmpty : !ocrSelected.isEmpty
         let count = ocrHasCharGranularity
             ? ocrCharSel.charCount(lines: ocrLines)
             : OCRTextOverlay.selectedCharCount(lines: ocrLines, indices: ocrSelected)
@@ -171,7 +162,6 @@ final class PinView: NSView {
             ? ocrCharSel.copyText(lines: ocrLines)
             : OCRTextOverlay.copyText(lines: ocrLines, indices: ocrSelected)
         Clipboard.write(text: text)
-        flashOCR(hasSelection ? "已复制 \(count) 字" : "已复制全部 \(count) 字")
         return count
     }
 
@@ -192,17 +182,7 @@ final class PinView: NSView {
         if ocrHasCharGranularity {
             ocrCharSel = OCRCharSelection(refs: line.chars.indices.map { OCRCharRef(line: index, charIndex: $0) })
         }
-        flashOCR("已复制 \(line.text.count) 字")
         return line.text.count
-    }
-
-    private func flashOCR(_ text: String) {
-        ocrFlash = text
-        needsDisplay = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            self?.ocrFlash = nil
-            self?.needsDisplay = true
-        }
     }
 
     /// 文字块上显示 I 形光标，提示可划选
