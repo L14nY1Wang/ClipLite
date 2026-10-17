@@ -22,37 +22,6 @@ OCR 改为「图片原位文字叠加层 + 就地逐字划选复制」，删除�
 - **OCR 结果面板删除**：`Sources/ClipLite/OCR/OCRResultPanel.swift`（`NSPanel` + `NSTextView` 弹窗）整体删除，改由 `OCRTextOverlay` 在图片原位绘制；截图/贴图两个宿主各少一个可抢焦点的窗口。
 - **OCR 子进程协议**：stdout 由纯文本改为 JSON 行数组（携带归一化坐标框），父进程 `VisionOCR.recognize` 返回 `[OCRLine]`。
 - **`PinView` 补 `acceptsFirstMouse`**：应用非激活时 AppKit 会把第一个左键 `mouseDown` 用于激活窗口，贴图视图此前收不到首次点击（拖拽正常是窗口级 `isMovableByWindowBackground` 的假象）——点一下文字行/双击复制都没反应。与标注画保持一致。
-- **OCR 子进程串行化**：同一时刻只跑一个 Vision 子进程，避免连续识图时多个子进程同时驻留、把内存与 CPU 峰值叠起来。
-- **保存 PNG 改直写，且改为弹出保存面板后才渲染**：用户取消面板时不再白渲染一张标注位图。
-- 标注画笔草稿直接改 `draft.points` 存储属性，去掉每帧整份拷贝数组（长笔画由 O(n²) 降为 O(n)）。
-- **保存面板 / 失败告警被全屏标注窗挡住**：告警窗层级 +1，不再被覆盖层压在下面。
-- **`⌥2` 贴超大图手柄跑到屏幕外**：新窗口先钳到所在屏可见区域并等比缩小，右下角缩放柄始终可用。
-- **F 键热键标签显示为 `Key96`**：`HotKeyLabel` 昔用 `kVK_F1…kVK_F12` 区间判断，而 F 键物理码非连续（F5=96、F9=101…），区间恒为空；改为显式查表。
-- **⌥1 后按 `Esc`/回车无反应**：`accessory` 应用不会因弹窗而自动成为前台。从别的应用触发截图时，本进程不是活跃应用，`Esc`/回车全部发给此前的前台应用——覆盖层在屏但**关不掉、也无法完成**，只能靠点击。`present()` 与标注层 `show()` 补 `NSApp.activate(ignoringOtherApps: true)`（`showFailure` 一直有这句，主路径漏了）。A/B 实测：无此行 149.7MB 不回落，有此行 `Esc` 后回落到 18.5MB。
-- **OCR「复制全部」可能复制出空串**：原用 `textView.string == "未识别到文字"` 判定占位，截图里真印着这六个字时真实结果会被当占位丢弃。改用 `isPlaceholder` 标志。
-- **设置窗开过一次后常驻不释放**：`settingsWC` 为 `lazy var` 强持有，关窗只 `orderOut`，窗口与整个视图树一直背着。改为懒建 + `windowWillClose` 时经 `onClose` 回调置 nil。
-- **标注会话中再按 ⌥1 会锁屏（只能强退）**：`startCapture` 只 guard `selection`，新会话照常开始，`annotation = ann` 直接顶掉旧控制器。旧标注窗从不 `close()`、工具条/大小条从不 `orderOut`（清理只有 `windowWillClose` 一条路），而旧控制器释放后 `canvas.windowController`（weak）与工具条 `[weak self]` 闭包全变 nil——旧窗既关不掉也不再响应，`.screenSaver` 层连菜单栏一起盖住。已画标注同时无声丢失。改为标注会话中也忽略 ⌥1，`didFinishSelection` 另加「先关再替换」兜底。
-- **文字工具输完点工具条，文字被丢弃且画布按键全失效**：工具条是 nonactivating 面板，点它不会自动结束字段编辑。原 `onSelectTool` 只切 `currentTool`，编辑器残留、键盘焦点仍在输入框——此后画布 Esc/回车/Delete 全部失效，再按 Esc 走 `cancelOperation` 把刚输的文字直接丢掉。新增 `switchTool`，切换前先 `commitTextEditorIfNeeded`。
-- **OCR 面板弹出后按回车/Esc 无反应**：`OCRResultPanel.show` 用 `makeKeyAndOrderFront` 抢走 key，标注画布失去键盘焦点，用户必须先用鼠标点一下画布才能继续。改为 `orderFrontRegardless`（面板是 `.nonactivatingPanel`，按钮/划选靠鼠标即可）。
-- **马赛克拖出蓝框后块被拉大、非方形、与底图错位**：`buildMosaic` 只按 `rect∩selection` 生成小图，绘制却铺满整个 `rect`。提交与移动两条路径都把 `rect` 收敛到交集，让「生成区」与「绘制区」严格一致。
-- **选择工具下无法拖动/缩放蓝框**：与 README「蓝框可拖动移动 / 8 向手柄缩放」不符。现 select 模式点到空白/边框时回落到蓝框操作（命中元素仍走元素选择，纯增量）。
-- **文字提交存在重入隐患**：`textEditor = nil` 原排在 `removeFromSuperview()` 之后，若移除仍为 first responder 的控件时同步回调 `controlTextDidEndEditing`，会把同一条文字重复入栈。改为先摘引用再移除（提交/取消两条路径）。
-- **微拖（≤4pt）后单击完全失灵**：`mouseUp` 未复位 `isDragging`，微拖两个分支都不进，标志残留为 true → 之后 `mouseMoved`/`draw` 的 `!isDragging` 门控失效，吸附高亮不更新、`snappedRect` 停在 nil，用户下一次单击（窗口吸附）无反应，要再点一次才好。
-- **主屏左下角幽灵放大镜**：`mouseGlobal` 初值 `.zero` 落在主屏原点，一上屏就画出放大镜且 `globalToPixel` 越界、RGB 恒为 `#000000`，直到该屏收到 mouseMoved 才消失。初值改为真实光标位置。
-- **光标栈可能失衡**：`teardown` 原用 `NSCursor.current == .crosshair` 对象比较决定该不该 pop，他处改过光标形状就会漏 pop，crosshair 永久滞留全局光标栈。改用自有 `cursorPushed` 标志。
-- **热键事件处理器装失败仍报成功**：`installIfNeeded` 失败只 NSLog，`register` 照返 true，上层不弹提示，用户面对永久按不响的快捷键。改为如实返回失败。
-- **开机自启失败零反馈**：原 catch 只 NSLog，用户只看到开关自己跳回去、没有任何解释。现弹告警说明（含「登录项里被禁用过需重新允许」）。
-- **`--ocr-worker`/`--trigger` 缺参数时静默启动 GUI**：现报错并 `exit(2)`；另修正 AppDelegate 注释里不存在的 `--trigger-capture`（实为 `--trigger capture`）。
-- **OCR 临时 PNG 在父进程被强杀时残留**：正常路径 `defer` 必清，但 SIGKILL 管不到。启动时清扫 1 小时前的 `cliplite-ocr-*.png`（只删旧文件，不碰并发识别中的）。
-### 内存（实测）
-- 全链路 footprint 与改动前基本持平（三屏覆盖窗峰值 150.1→149.8MB、标注 49.7→50.0MB、贴图大图 240.3→240.1MB）：三屏峰值主要由窗口服务器持有的 backing store 构成，不计入进程 footprint，此前「`isOpaque=true` 可压峰值」的假设经 A/B **证伪**（见 `docs/MEMORY-AUDIT.md` §4.7），已回滚。本次内存收益集中在**瞬时分配**：OCR/保存各去掉一份整幅 `NSBitmapImageRep` 拷贝（4K 选区约 13~48MB），保存面板取消时不再渲染。
-### 文档
-- `README.md` 更正快捷键口径：「完成标注并复制」只对应回车；`Esc` 实为**放弃标注并关闭**（有选中元素时先取消选中），原文误写为「回车 / `Esc`」。
-
-### 工程
-- `Makefile` 新增 `test`（`swift test`）与 `memtest`（`--memtest` 逐步 footprint）目标，删掉 `.PHONY` 中并不存在的 `sign`。
-- release 流程在构建 DMG 前先跑 `swift test`（此前全程不跑测试）。
-- `.gitignore` 补 `*.p12` / `*.p8` / `*.keychain` / `*.cer` / `*.mobileprovision`，避免发布会话产生的签名凭据被误提交。
 
 ## [0.3.0] - 2026-09-28
 
@@ -71,7 +40,15 @@ OCR 改为「图片原位文字叠加层 + 就地逐字划选复制」，删除�
 ### 变更
 - 删除源码内 3 处 `selfCheck()`（断言已迁至 `Tests/`），`--selftest` 不再调用它们。
 
+### 内存（实测）
+- 全链路 footprint 与改动前基本持平（三屏覆盖窗峰值 150.1→149.8MB、标注 49.7→50.0MB、贴图大图 240.3→240.1MB）：三屏峰值主要由窗口服务器持有的 backing store 构成，不计入进程 footprint，此前「`isOpaque=true` 可压峰值」的假设经 A/B **证伪**（见 `docs/MEMORY-AUDIT.md` §4.7），已回滚。本次内存收益集中在**瞬时分配**：OCR/保存各去掉一份整幅 `NSBitmapImageRep` 拷贝（4K 选区约 13~48MB），保存面板取消时不再渲染。
+### 工程
+- `Makefile` 新增 `test`（`swift test`）与 `memtest`（`--memtest` 逐步 footprint）目标，删掉 `.PHONY` 中并不存在的 `sign`。
+- release 流程在构建 DMG 前先跑 `swift test`（此前全程不跑测试）。
+- `.gitignore` 补 `*.p12` / `*.p8` / `*.keychain` / `*.cer` / `*.mobileprovision`，避免发布会话产生的签名凭据被误提交。
+
 ### 文档
+- `README.md` 更正快捷键口径：「完成标注并复制」只对应回车；`Esc` 实为**放弃标注并关闭**（有选中元素时先取消选中），原文误写为「回车 / `Esc`」。
 - `README.md` 内存口径对齐实测：空闲由「约 **7MB**」更正为「约 **8MB**」，并补充「使用后回落至饱和平台（20–75MB，非累积泄漏）」与「三屏截图峰值 149.6MB」。
 - `README.md` 新增「已知限制」：不支持跨屏框选、仅 Apple Silicon（arm64）、ad-hoc 未公证；「升级后无法截图」一节改为指向新的一键菜单。
 
