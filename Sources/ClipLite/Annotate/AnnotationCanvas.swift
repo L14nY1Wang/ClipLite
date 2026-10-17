@@ -34,13 +34,23 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     // OCR 文字叠加层（就地划选复制，替代原先的结果弹窗）
     private(set) var ocrLines: [OCRLine] = []   // showOCROverlay 传入时已按阅读顺序排好
-    private var ocrSelected: Set<Int> = []
+    private var ocrSelected: Set<Int> = []       // 行级选择（无字符粒度数据的退化路径）
+    private var ocrCharSel = OCRCharSelection()  // 字符级选择（主路径）
     private var ocrMessage: String?             // 空结果/失败提示（lines 为空时显示）
     private var ocrMarquee: NSRect?
     private var ocrDragStart: NSPoint?
     private var ocrFlash: String?
+    private var ocrShowText = true              // false = 隐藏叠字看原图（选中仍高亮）
     private var ocrActive = false
     var isOCROverlayActive: Bool { ocrActive }
+    /// 叠加层是否具备逐字选择能力（有字符数据即可）。
+    var ocrHasCharGranularity: Bool { ocrLines.contains { !$0.chars.isEmpty } }
+    /// 底部操作提示：随「是否显示叠字」切换文案，用户能发现 H 键可以隐藏叠字。
+    private var ocrHint: String {
+        ocrShowText
+            ? "拖动逐字选择 · ↩/⌘C 复制 · ⌘A 全选 · H 隐藏叠字 · Esc 退出文字模式"
+            : "拖动逐字选择 · ↩/⌘C 复制 · ⌘A 全选 · H 显示叠字 · Esc 退出文字模式"
+    }
 
     // 元素二次编辑（select 工具）
     var selectedID: UUID?               // 当前选中元素（internal：控制器切换工具时清除）
@@ -84,6 +94,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         ocrMessage = message
         ocrActive = true
         ocrSelected = []
+        ocrCharSel = OCRCharSelection()
+        ocrShowText = true
         ocrMarquee = nil
         ocrFlash = nil
         window?.invalidateCursorRects(for: self)
@@ -95,6 +107,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         ocrLines = []
         ocrMessage = nil
         ocrSelected = []
+        ocrCharSel = OCRCharSelection()
         ocrMarquee = nil
         ocrDragStart = nil
         ocrFlash = nil
@@ -104,14 +117,26 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         windowController?.ocrOverlayVisibilityChanged()
     }
 
+    /// 切换「显示/隐藏叠字」：隐藏后只看原图，选中区域仍以强调色标出，划选复制不受影响。
+    func toggleOCRText() {
+        ocrShowText.toggle()
+        needsDisplay = true
+    }
+
     /// 复制选中文字（无选中 = 全部）；返回复制字数，1.2s 后清除 flash 提示。
     @discardableResult
     func copyOCRSelection() -> Int {
         // 空结果不写剪贴板：否则 ⌘C 会把用户原有剪贴板内容清成空串（真·数据丢失）
         guard !ocrLines.isEmpty else { return 0 }
-        let n = OCRTextOverlay.selectedCharCount(lines: ocrLines, indices: ocrSelected)
-        Clipboard.write(text: OCRTextOverlay.copyText(lines: ocrLines, indices: ocrSelected))
-        ocrFlash = ocrSelected.isEmpty ? "已复制全部 \(n) 字" : "已复制 \(n) 字"
+        let hasSel = ocrHasCharGranularity ? !ocrCharSel.isEmpty : !ocrSelected.isEmpty
+        let text = ocrHasCharGranularity
+            ? ocrCharSel.copyText(lines: ocrLines)
+            : OCRTextOverlay.copyText(lines: ocrLines, indices: ocrSelected)
+        let n = ocrHasCharGranularity
+            ? ocrCharSel.charCount(lines: ocrLines)
+            : OCRTextOverlay.selectedCharCount(lines: ocrLines, indices: ocrSelected)
+        Clipboard.write(text: text)
+        ocrFlash = hasSel ? "已复制 \(n) 字" : "已复制全部 \(n) 字"
         needsDisplay = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             self?.ocrFlash = nil
@@ -121,7 +146,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     func selectAllOCR() {
-        ocrSelected = Set(ocrLines.indices)
+        if ocrHasCharGranularity {
+            ocrCharSel = OCRCharQuery.all(lines: ocrLines)
+        } else {
+            ocrSelected = Set(ocrLines.indices)
+        }
         needsDisplay = true
     }
 
@@ -141,7 +170,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         if ocrActive {
             let p = convert(event.locationInWindow, from: nil)
             ocrDragStart = p
-            ocrSelected = OCRTextOverlay.hitTest(lines: ocrLines, host: selection, point: p).map { Set([$0]) } ?? []
+            if ocrHasCharGranularity {
+                ocrCharSel = OCRCharQuery.hit(lines: ocrLines, host: selection, point: p).map { OCRCharSelection(refs: [$0]) } ?? OCRCharSelection()
+            } else {
+                ocrSelected = OCRTextOverlay.hitTest(lines: ocrLines, host: selection, point: p).map { Set([$0]) } ?? []
+            }
             needsDisplay = true
             return
         }
@@ -202,7 +235,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         if ocrActive, let s = ocrDragStart {
             let m = NSRect(x: min(s.x, p.x), y: min(s.y, p.y), width: abs(p.x - s.x), height: abs(p.y - s.y))
             ocrMarquee = m
-            ocrSelected = OCRTextOverlay.selectedIndices(lines: ocrLines, host: selection, marquee: m)
+            if ocrHasCharGranularity {
+                ocrCharSel = OCRCharQuery.select(lines: ocrLines, host: selection, marquee: m)
+            } else {
+                ocrSelected = OCRTextOverlay.selectedIndices(lines: ocrLines, host: selection, marquee: m)
+            }
             needsDisplay = true
             return
         }
@@ -290,6 +327,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 if event.modifierFlags.contains(.command) { copyOCRSelection() }
             case 0:                        // a：仅 ⌘A 全选
                 if event.modifierFlags.contains(.command) { selectAllOCR() }
+            case 4:                        // h：切换「显示/隐藏叠字」（无修饰键）
+                if event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty { toggleOCRText() }
             case 53:                       // Esc
                 hideOCROverlay()
             case 36, 76:                   // Return / KeypadReturn
@@ -489,9 +528,9 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             if ocrLines.isEmpty, let msg = ocrMessage {
                 OCRTextOverlay.drawMessage(msg, in: sel)
             } else {
-                OCRTextOverlay.draw(lines: ocrLines, selected: ocrSelected, host: sel,
-                                    hint: "拖动选择文字 · ↩/⌘C 复制 · ⌘A 全选 · Esc 退出文字模式",
-                                    flash: ocrFlash)
+                OCRTextOverlay.drawChars(lines: ocrLines, selected: ocrCharSel, host: sel,
+                                         showText: ocrShowText,
+                                         hint: ocrHint, flash: ocrFlash)
                 if let m = ocrMarquee {   // 拖拽选框：白边 + 黑 20% 填充
                     NSColor.black.withAlphaComponent(0.2).setFill()
                     NSBezierPath(rect: m).fill()

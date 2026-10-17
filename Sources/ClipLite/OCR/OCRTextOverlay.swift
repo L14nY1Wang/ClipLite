@@ -1,15 +1,10 @@
 import AppKit
 
-/// 一行 OCR 识别结果。`box` 为归一化矩形（Vision 约定：原点在左下、y 向上、取值 0~1），
-/// 与 AppKit 视图坐标（原点左下）同向，映射时只需按宿主尺寸缩放。
-struct OCRLine {
-    let text: String
-    let box: CGRect
-}
-
-/// OCR 文字叠加层：识别结果直接渲染在图片原位，就地划选复制，不再弹结果窗。
+/// OCR 文字叠加层：识别结果直接渲染在图片原位，就地逐字划选复制，不再弹结果窗。
+/// 数据模型见 `OCRCharModel.swift`（`OCRLine` / `OCRChar` / `OCRCharSelection`）。
 /// 技术路线参考 Umi-OCR 的 `ImageWithText`（半透明底 + 白字叠在原位、左键拖选、
 /// 右键菜单 / ⌘C 复制、无有效选中时复制全部）；几何部分为纯函数，便于单测。
+
 enum OCRTextOverlay {
     /// 阅读顺序：先按竖直中心从上到下，同一行内从左到右（容差 1% 图高）。
     static func readingOrder(_ lines: [OCRLine]) -> [OCRLine] {
@@ -28,6 +23,11 @@ enum OCRTextOverlay {
                height: line.box.height * host.height)
     }
 
+    /// 单个字符的归一化 box → 宿主视图坐标矩形。
+    static func viewRectForChar(_ ch: OCRChar, in host: NSRect) -> NSRect {
+        viewRect(OCRLine(text: String(ch.char), box: ch.box), in: host)
+    }
+
     /// 命中测试：视图点落在哪个文字块内（外扩 padding 便于抓取）。
     static func hitTest(lines: [OCRLine], host: NSRect, point: NSPoint, padding: CGFloat = 2) -> Int? {
         for (i, line) in lines.enumerated() {
@@ -36,13 +36,25 @@ enum OCRTextOverlay {
         return nil
     }
 
-    /// 拖拽 marquee 选中的文字行下标。单击（面积≈0）退化为点包含，避免误选仅边缘相接的邻行。
+    /// 拖拽 marquee 选中的文字行下标。
+    /// 水平/竖直拖拽时 marquee 有一条边为 0，`CGRect.intersects` 会因零面积交集返回 false
+    /// （用户横着拖选一行都选不中）；把零厚度的边当线段处理：与该边重叠即算相交。
     static func selectedIndices(lines: [OCRLine], host: NSRect, marquee: NSRect) -> Set<Int> {
-        let isClick = marquee.width < 1 && marquee.height < 1
+        let probe = NSPoint(x: marquee.midX, y: marquee.midY)
+        let zeroH = marquee.height < 1
+        let zeroW = marquee.width < 1
         var out: Set<Int> = []
         for (i, line) in lines.enumerated() {
             let r = viewRect(line, in: host)
-            let hit = isClick ? r.contains(NSPoint(x: marquee.midX, y: marquee.midY)) : r.intersects(marquee)
+            let hit: Bool
+            switch (zeroH, zeroW) {
+            case (true, true):    hit = r.contains(probe)
+            case (true, false):   hit = r.minY <= probe.y && probe.y <= r.maxY
+                                            && r.minX < marquee.maxX && marquee.minX < r.maxX
+            case (false, true):   hit = r.minX <= probe.x && probe.x <= r.maxX
+                                            && r.minY < marquee.maxY && marquee.minY < r.maxY
+            case (false, false):  hit = r.intersects(marquee)
+            }
             if hit { out.insert(i) }
         }
         return out
@@ -62,28 +74,45 @@ enum OCRTextOverlay {
     }
 
     // MARK: - 绘制
-
-    /// 绘制叠加层。宿主需自行保证裁剪（标注模式裁到蓝选区内；贴图模式即整个 bounds）。
-    /// `hint` 常驻底部操作提示；`flash` 为瞬时反馈（复制成功提示），存在时优先显示。
-    static func draw(lines: [OCRLine], selected: Set<Int>, host: NSRect,
-                     hint: String?, flash: String?) {
-        for (i, line) in lines.enumerated() {
-            let r = viewRect(line, in: host)
-            guard r.width > 0.5, r.height > 0.5, !line.text.isEmpty else { continue }
-            // 未选：半透明黑底白字（Umi-OCR #99000000 同思路，保证任何底图上可读）；
-            // 选中：强调色底，一眼区分。
-            (selected.contains(i)
-                ? NSColor.controlAccentColor.withAlphaComponent(0.92)
-                : NSColor.black.withAlphaComponent(0.45)).setFill()
-            NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5)).fill()
-
-            let font = fittedFont(line.text, box: r)
-            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-            let size = (line.text as NSString).size(withAttributes: attrs)
-            // 基线 = 竖直居中（字形范围 [baseline-descender, baseline+ascender]）
-            let baseline = r.midY - (font.ascender - font.descender) / 2
-            (line.text as NSString).draw(
-                at: NSPoint(x: r.midX - size.width / 2, y: baseline), withAttributes: attrs)
+    /// 逐字绘制叠加层（选中按字符高亮）。`showText=false` 时只画选中底色、不画文字——
+    /// 即「隐藏叠字、看原图」，选中区域仍以强调色标出，不影响划选与复制。
+    static func drawChars(lines: [OCRLine], selected: OCRCharSelection, host: NSRect,
+                          showText: Bool, hint: String?, flash: String?) {
+        for (li, line) in lines.enumerated() {
+            guard !line.chars.isEmpty else {
+                // 无字符粒度数据：退化为整行绘制，保证老结果仍可用
+                let r = viewRect(line, in: host)
+                guard r.width > 0.5, r.height > 0.5, !line.text.isEmpty else { continue }
+                let lineSel = selected.contains(OCRCharRef(line: li, charIndex: 0))
+                (lineSel ? NSColor.controlAccentColor.withAlphaComponent(0.92)
+                         : NSColor.black.withAlphaComponent(0.45)).setFill()
+                NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5)).fill()
+                if showText {
+                    let font = fittedFont(line.text, box: r)
+                    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+                    let size = (line.text as NSString).size(withAttributes: attrs)
+                    let baseline = r.midY - (font.ascender - font.descender) / 2
+                    (line.text as NSString).draw(at: NSPoint(x: r.midX - size.width / 2, y: baseline),
+                                                 withAttributes: attrs)
+                }
+                continue
+            }
+            for (ci, ch) in line.chars.enumerated() {
+                let r = viewRectForChar(ch, in: host)
+                guard r.width > 0.5, r.height > 0.5 else { continue }
+                let on = selected.contains(OCRCharRef(line: li, charIndex: ci))
+                (on ? NSColor.controlAccentColor.withAlphaComponent(0.92)
+                    : NSColor.black.withAlphaComponent(0.32)).setFill()
+                NSBezierPath(rect: r.insetBy(dx: 0.25, dy: 0.5)).fill()
+                if showText {
+                    let font = fittedFont(String(ch.char), box: r)
+                    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+                    let size = (String(ch.char) as NSString).size(withAttributes: attrs)
+                    let baseline = r.midY - (font.ascender - font.descender) / 2
+                    (String(ch.char) as NSString).draw(
+                        at: NSPoint(x: r.midX - size.width / 2, y: baseline), withAttributes: attrs)
+                }
+            }
         }
         if let tip = flash ?? hint { drawPill(tip, in: host) }
     }

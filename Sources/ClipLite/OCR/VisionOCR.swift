@@ -79,10 +79,16 @@ enum VisionOCR {
         return try decodeJSON(outData)
     }
 
-    // MARK: - 子进程 JSON 协议（stdout：`[{"t": 文字, "b": [x, y, w, h]}, ...]`，box 归一化）
+    // MARK: - 子进程 JSON 协议（stdout：`[{"t": 文字, "b": [x,y,w,h], "c": [{"c": 字符, "b": [...]}, ...]}, ...]`，box 归一化）
     static func encodeJSON(_ lines: [OCRLine]) throws -> Data {
-        let payload = lines.map { ["t": $0.text,
-                                   "b": [$0.box.minX, $0.box.minY, $0.box.width, $0.box.height]] }
+        let payload: [[String: Any]] = lines.map { l in
+            [
+                "t": l.text,
+                "b": [l.box.minX, l.box.minY, l.box.width, l.box.height],
+                "c": l.chars.map { ["c": String($0.char),
+                                    "b": [$0.box.minX, $0.box.minY, $0.box.width, $0.box.height]] },
+            ]
+        }
         return try JSONSerialization.data(withJSONObject: payload)
     }
 
@@ -92,7 +98,12 @@ enum VisionOCR {
         }
         return arr.compactMap { d in
             guard let t = d["t"] as? String, let b = d["b"] as? [CGFloat], b.count == 4 else { return nil }
-            return OCRLine(text: t, box: CGRect(x: b[0], y: b[1], width: b[2], height: b[3]))
+            let chars: [OCRChar] = ((d["c"] as? [[String: Any]]) ?? []).compactMap { cd in
+                guard let cs = cd["c"] as? String, cs.count == 1,
+                      let cb = cd["b"] as? [CGFloat], cb.count == 4 else { return nil }
+                return OCRChar(char: cs.first!, box: CGRect(x: cb[0], y: cb[1], width: cb[2], height: cb[3]))
+            }
+            return OCRLine(text: t, box: CGRect(x: b[0], y: b[1], width: b[2], height: b[3]), chars: chars)
         }
     }
 
@@ -101,8 +112,9 @@ enum VisionOCR {
         var lines: [OCRLine] = []
         let request = VNRecognizeTextRequest { req, _ in
             lines = ((req.results as? [VNRecognizedTextObservation]) ?? []).compactMap { obs in
-                guard let s = obs.topCandidates(1).first?.string else { return nil }
-                return OCRLine(text: s, box: obs.boundingBox)
+                guard let cand = obs.topCandidates(1).first else { return nil }
+                return OCRLine(text: cand.string, box: obs.boundingBox,
+                               chars: Self.charBoxes(of: cand))
             }
         }
         request.recognitionLevel = .accurate
@@ -112,6 +124,26 @@ enum VisionOCR {
         request.minimumTextHeight = 0
         try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
         return lines
+    }
+
+    /// 逐字符取归一化坐标框，实现「逐字选择」。
+    /// 注意 accurate 模式下 `boundingBox(for:)` 对英文是**词级**精度（Apple 文档明示），
+    /// 对中文是字符级；`fast` 模式才是真正字符级但识别质量差。取舍：accurate 为主识别，
+    /// 中文逐字、英文逐词——中文截图场景（本项目主要用户）拿到完整逐字能力。
+    /// 空格没有框（返回 .zero），直接跳过，复制时按 text 拼接不丢字。
+    private static func charBoxes(of cand: VNRecognizedText) -> [OCRChar] {
+        let s = cand.string
+        var out: [OCRChar] = []
+        out.reserveCapacity(s.count)
+        var i = s.startIndex
+        while i < s.endIndex {
+            let n = s.index(after: i)
+            if let b = (try? cand.boundingBox(for: i..<n))?.boundingBox, b != .zero, b.width > 0 {
+                out.append(OCRChar(char: s[i], box: b))
+            }
+            i = n
+        }
+        return out
     }
 }
 

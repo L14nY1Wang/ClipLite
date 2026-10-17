@@ -85,6 +85,8 @@ final class PinWindowController: NSObject, NSWindowDelegate {
     /// 复制划选文字（无选中则复制全部）
     @objc func copyOCRText() { pinView.copyOCRSelection() }
     @objc func copyAllOCRText() { pinView.copyAllOCR() }
+    /// 显示/隐藏叠字：隐藏后只看原图，选中区域仍高亮，划选复制不受影响。
+    @objc func toggleOCRTextVisible() { pinView.toggleOCRText() }
 
     func showMenu(event: NSEvent) {
         let m = NSMenu()
@@ -92,6 +94,7 @@ final class PinWindowController: NSObject, NSWindowDelegate {
         if overlay {
             m.addItem(titled("复制选中文字", #selector(copyOCRText)))
             m.addItem(titled("复制全部文字", #selector(copyAllOCRText)))
+            m.addItem(titled(pinView.ocrTextVisible ? "隐藏叠字" : "显示叠字", #selector(toggleOCRTextVisible)))
             m.addItem(.separator())
         }
         m.addItem(titled(overlay ? "隐藏文字" : "识别文字", #selector(recognize)))

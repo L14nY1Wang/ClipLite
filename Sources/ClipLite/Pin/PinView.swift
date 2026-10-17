@@ -19,15 +19,25 @@ final class PinView: NSView {
     private var cropRect: NSRect = .zero
     private let minCropSize: CGFloat = 8
 
-    // OCR 叠加层：识别文字按原位叠在图片上，就地左键划选复制（贴图是非激活面板，无键盘路径）
+    // OCR 叠加层：识别文字按原位叠在图片上，就地逐字划选复制（贴图是非激活面板，无键盘路径）
     private(set) var ocrLines: [OCRLine] = []
-    private var ocrSelected: Set<Int> = []
+    private var ocrSelected: Set<Int> = []       // 行级选择（无字符粒度数据的退化路径）
+    private var ocrCharSel = OCRCharSelection()  // 字符级选择（主路径）
     private var ocrMessage: String?      // 空结果/失败提示（lines 为空时显示）
     private var ocrMarquee: NSRect?
     private var ocrDragStart: NSPoint?
     private var ocrFlash: String?
+    private var ocrShowText = true       // false = 隐藏叠字看原图（选中仍高亮）
     private var ocrActive = false
     var isOCROverlayActive: Bool { ocrActive }
+    var ocrHasCharGranularity: Bool { ocrLines.contains { !$0.chars.isEmpty } }
+    var ocrTextVisible: Bool { ocrShowText }
+    /// 底部操作提示：随「是否显示叠字」切换文案（贴图无键盘，隐藏/显示走右键菜单）。
+    private var ocrHint: String {
+        ocrShowText
+            ? "拖动逐字选择 · 双击行复制 · 右键菜单复制/隐藏叠字"
+            : "拖动逐字选择 · 双击行复制 · 右键菜单复制/显示叠字"
+    }
 
     init(image: CGImage, baseSize: NSSize) {
         self.cgImage = image
@@ -68,9 +78,8 @@ final class PinView: NSView {
             if ocrLines.isEmpty, let msg = ocrMessage {
                 OCRTextOverlay.drawMessage(msg, in: bounds)
             } else {
-                OCRTextOverlay.draw(lines: ocrLines, selected: ocrSelected, host: bounds,
-                                    hint: "拖动选择文字 · 双击行复制 · 右键菜单复制/退出",
-                                    flash: ocrFlash)
+                OCRTextOverlay.drawChars(lines: ocrLines, selected: ocrCharSel, host: bounds,
+                                         showText: ocrShowText, hint: ocrHint, flash: ocrFlash)
                 if let m = ocrMarquee {
                     NSColor.black.withAlphaComponent(0.2).setFill()
                     NSBezierPath(rect: m).fill()
@@ -122,6 +131,8 @@ final class PinView: NSView {
         ocrMessage = message
         ocrActive = true
         ocrSelected = []
+        ocrCharSel = OCRCharSelection()
+        ocrShowText = true
         ocrMarquee = nil
         ocrFlash = nil
         window?.invalidateCursorRects(for: self)
@@ -132,6 +143,7 @@ final class PinView: NSView {
         ocrLines = []
         ocrMessage = nil
         ocrSelected = []
+        ocrCharSel = OCRCharSelection()
         ocrMarquee = nil
         ocrDragStart = nil
         ocrFlash = nil
@@ -140,14 +152,25 @@ final class PinView: NSView {
         needsDisplay = true
     }
 
+    /// 切换「显示/隐藏叠字」：隐藏后只看原图，选中区域仍以强调色标出，划选复制不受影响。
+    func toggleOCRText() {
+        ocrShowText.toggle()
+        needsDisplay = true
+    }
+
     /// 复制划选文字；无选中时复制全部（同 Umi-OCR，避免「点了没反应」）。返回复制字数。
     @discardableResult
     func copyOCRSelection() -> Int {
         // 空结果不写剪贴板：否则会把用户原有剪贴板内容清成空串（真·数据丢失）
         guard !ocrLines.isEmpty else { return 0 }
-        let hasSelection = !ocrSelected.isEmpty
-        let count = OCRTextOverlay.selectedCharCount(lines: ocrLines, indices: ocrSelected)
-        Clipboard.write(text: OCRTextOverlay.copyText(lines: ocrLines, indices: ocrSelected))
+        let hasSelection = ocrHasCharGranularity ? !ocrCharSel.isEmpty : !ocrSelected.isEmpty
+        let count = ocrHasCharGranularity
+            ? ocrCharSel.charCount(lines: ocrLines)
+            : OCRTextOverlay.selectedCharCount(lines: ocrLines, indices: ocrSelected)
+        let text = ocrHasCharGranularity
+            ? ocrCharSel.copyText(lines: ocrLines)
+            : OCRTextOverlay.copyText(lines: ocrLines, indices: ocrSelected)
+        Clipboard.write(text: text)
         flashOCR(hasSelection ? "已复制 \(count) 字" : "已复制全部 \(count) 字")
         return count
     }
@@ -155,16 +178,22 @@ final class PinView: NSView {
     @discardableResult
     func copyAllOCR() -> Int {
         ocrSelected = []
+        ocrCharSel = OCRCharSelection()
         return copyOCRSelection()
     }
 
+    /// 双击某行直接复制该行全部文字（贴图无键盘路径，双击是最高效的「复制一行」）。
     @discardableResult
     func copyLine(at index: Int) -> Int {
-        let text = ocrLines[index].text
-        Clipboard.write(text: text)
+        let line = ocrLines[index]
+        Clipboard.write(text: line.text)
         ocrSelected = [index]
-        flashOCR("已复制 \(text.count) 字")
-        return text.count
+        // 字符粒度下同步点亮整行，视觉一致
+        if ocrHasCharGranularity {
+            ocrCharSel = OCRCharSelection(refs: line.chars.indices.map { OCRCharRef(line: index, charIndex: $0) })
+        }
+        flashOCR("已复制 \(line.text.count) 字")
+        return line.text.count
     }
 
     private func flashOCR(_ text: String) {
@@ -197,7 +226,13 @@ final class PinView: NSView {
             if let idx = OCRTextOverlay.hitTest(lines: ocrLines, host: bounds, point: p) {
                 if event.clickCount >= 2 { copyLine(at: idx); return }   // 双击文字行 = 复制本行，不关窗
                 ocrDragStart = p
-                ocrSelected = [idx]
+                // 按下即选中该位置的一个字符（字符粒度）或整行（退化路径），拖拽再扩展
+                if ocrHasCharGranularity {
+                    ocrCharSel = OCRCharQuery.hit(lines: ocrLines, host: bounds, point: p)
+                        .map { OCRCharSelection(refs: [$0]) } ?? OCRCharSelection()
+                } else {
+                    ocrSelected = [idx]
+                }
                 needsDisplay = true
                 return
             }
@@ -228,7 +263,11 @@ final class PinView: NSView {
             let m = NSRect(x: min(start.x, p.x), y: min(start.y, p.y),
                            width: abs(p.x - start.x), height: abs(p.y - start.y))
             ocrMarquee = m
-            ocrSelected = OCRTextOverlay.selectedIndices(lines: ocrLines, host: bounds, marquee: m)
+            if ocrHasCharGranularity {
+                ocrCharSel = OCRCharQuery.select(lines: ocrLines, host: bounds, marquee: m)
+            } else {
+                ocrSelected = OCRTextOverlay.selectedIndices(lines: ocrLines, host: bounds, marquee: m)
+            }
             needsDisplay = true
             return
         }
