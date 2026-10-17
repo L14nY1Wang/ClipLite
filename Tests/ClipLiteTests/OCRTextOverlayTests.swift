@@ -25,7 +25,7 @@ final class OCRTextOverlayTests: XCTestCase {
 
     /// 单个字符的归一化框 → 宿主坐标。
     func testViewRectForCharMapping() {
-        let ch = OCRChar(char: "A", box: CGRect(x: 0.25, y: 0.50, width: 0.10, height: 0.08))
+        let ch = OCRChar(char: "A", box: CGRect(x: 0.25, y: 0.50, width: 0.10, height: 0.08), textIndex: 0)
         let r = OCRTextOverlay.viewRectForChar(ch, in: host)
         XCTAssertEqual(r.minX, 50 + 0.25 * 400, accuracy: 1e-9)
         XCTAssertEqual(r.minY, 100 + 0.50 * 200, accuracy: 1e-9)
@@ -115,7 +115,7 @@ final class OCRCharSelectionTests: XCTestCase {
     /// 构造一行 4 个等宽字符（归一化 x 0.1~0.5，每字 0.1 宽，y 0.4~0.5）。
     private var charLine: OCRLine {
         let chars: [OCRChar] = ["A", "B", "C", "D"].enumerated().map { i, c in
-            OCRChar(char: c, box: CGRect(x: 0.10 + 0.10 * Double(i), y: 0.40, width: 0.10, height: 0.10))
+            OCRChar(char: c, box: CGRect(x: 0.10 + 0.10 * Double(i), y: 0.40, width: 0.10, height: 0.10), textIndex: i)
         }
         return OCRLine(text: "ABCD", box: CGRect(x: 0.10, y: 0.40, width: 0.40, height: 0.10), chars: chars)
     }
@@ -144,7 +144,7 @@ final class OCRCharSelectionTests: XCTestCase {
         let upper = charLine
         let lower = OCRLine(text: "EFGH", box: CGRect(x: 0.10, y: 0.10, width: 0.40, height: 0.10),
                             chars: ["E", "F", "G", "H"].enumerated().map { i, c in
-                                OCRChar(char: c, box: CGRect(x: 0.10 + 0.10 * Double(i), y: 0.10, width: 0.10, height: 0.10))
+                                OCRChar(char: c, box: CGRect(x: 0.10 + 0.10 * Double(i), y: 0.10, width: 0.10, height: 0.10), textIndex: i)
                             })
         // marquee 视图范围 x 88~208（宽 120）、y 120~200：覆盖上行的 A,B,C 与下行的 E,F,G
         let m = NSRect(x: 88, y: 100 + 0.10 * 200, width: 120, height: 0.40 * 200)
@@ -197,8 +197,8 @@ final class OCRCharSelectionTests: XCTestCase {
     /// 命中测试：点在行内但不在任何字符框内（如词间空格），回退到最近字符，保证拖得起。
     func testHitTestFallsBackToNearestChar() {
         let chars: [OCRChar] = [
-            OCRChar(char: "A", box: CGRect(x: 0.10, y: 0.40, width: 0.10, height: 0.10)),
-            OCRChar(char: "B", box: CGRect(x: 0.30, y: 0.40, width: 0.10, height: 0.10)),
+            OCRChar(char: "A", box: CGRect(x: 0.10, y: 0.40, width: 0.10, height: 0.10), textIndex: 0),
+            OCRChar(char: "B", box: CGRect(x: 0.30, y: 0.40, width: 0.10, height: 0.10), textIndex: 1),
         ]
         let line = OCRLine(text: "AB", box: CGRect(x: 0.10, y: 0.40, width: 0.30, height: 0.10), chars: chars)
         // 两点之间（归一化 x 0.20 → 视图 x 130）没有字符框
@@ -209,9 +209,9 @@ final class OCRCharSelectionTests: XCTestCase {
     /// 字符数据与 text 一致：协议往返不丢字（中文/英文混排场景）。
     func testCharsTextMatchesLineText() throws {
         let chars: [OCRChar] = [
-            OCRChar(char: "中", box: CGRect(x: 0.10, y: 0.40, width: 0.10, height: 0.10)),
-            OCRChar(char: "文", box: CGRect(x: 0.20, y: 0.40, width: 0.10, height: 0.10)),
-            OCRChar(char: "A", box: CGRect(x: 0.30, y: 0.40, width: 0.05, height: 0.10)),
+            OCRChar(char: "中", box: CGRect(x: 0.10, y: 0.40, width: 0.10, height: 0.10), textIndex: 0),
+            OCRChar(char: "文", box: CGRect(x: 0.20, y: 0.40, width: 0.10, height: 0.10), textIndex: 1),
+            OCRChar(char: "A", box: CGRect(x: 0.30, y: 0.40, width: 0.05, height: 0.10), textIndex: 2),
         ]
         let line = OCRLine(text: "中文A", box: CGRect(x: 0.10, y: 0.40, width: 0.25, height: 0.10), chars: chars)
         XCTAssertEqual(line.charsText, line.text)
@@ -224,5 +224,68 @@ final class OCRCharSelectionTests: XCTestCase {
     func testDegenerateLineWithoutCharsFallsBackToLineSelection() {
         let plain = OCRLine(text: "PLAIN", box: CGRect(x: 0.10, y: 0.40, width: 0.30, height: 0.10))
         XCTAssertEqual(OCRTextOverlay.copyText(lines: [plain], indices: []), "PLAIN")
+    }
+
+    /// 空格没有坐标框、不会进 chars，但复制必须保留它——否则英文被拼成 "HelloWorld"。
+    /// 这是实测踩过的坑：主路径曾逐字拼 chars，把空格全丢了。
+    func testCopyTextPreservesSpaces() {
+        // "A B"：空格在 textIndex 1，只有 A(0)/B(2) 有框
+        let chars: [OCRChar] = [
+            OCRChar(char: "A", box: CGRect(x: 0.10, y: 0.40, width: 0.05, height: 0.10), textIndex: 0),
+            OCRChar(char: "B", box: CGRect(x: 0.25, y: 0.40, width: 0.05, height: 0.10), textIndex: 2),
+        ]
+        let line = OCRLine(text: "A B", box: CGRect(x: 0.10, y: 0.40, width: 0.20, height: 0.10), chars: chars)
+        let sel = OCRCharSelection(refs: [OCRCharRef(line: 0, charIndex: 0),
+                                          OCRCharRef(line: 0, charIndex: 1)])
+        XCTAssertEqual(sel.copyText(lines: [line]), "A B")
+    }
+
+    /// 行内选中间一段：按 text 切片，前后的空格不被带进来。
+    func testCopyTextSlicesSubrange() {
+        // "AB CD"：空格在 textIndex 2，A/B/C/D 分别在 0/1/3/4
+        let chars: [OCRChar] = [
+            OCRChar(char: "A", box: CGRect(x: 0.10, y: 0.40, width: 0.05, height: 0.10), textIndex: 0),
+            OCRChar(char: "B", box: CGRect(x: 0.15, y: 0.40, width: 0.05, height: 0.10), textIndex: 1),
+            OCRChar(char: "C", box: CGRect(x: 0.25, y: 0.40, width: 0.05, height: 0.10), textIndex: 3),
+            OCRChar(char: "D", box: CGRect(x: 0.30, y: 0.40, width: 0.05, height: 0.10), textIndex: 4),
+        ]
+        let line = OCRLine(text: "AB CD", box: CGRect(x: 0.10, y: 0.40, width: 0.25, height: 0.10), chars: chars)
+        // 只选 C、D
+        let sel = OCRCharSelection(refs: [OCRCharRef(line: 0, charIndex: 2),
+                                          OCRCharRef(line: 0, charIndex: 3)])
+        XCTAssertEqual(sel.copyText(lines: [line]), "CD")
+    }
+
+    /// 选中非末行时，复制结果不应以换行结尾（旧实现按「总行数」判末行，中间行会带尾随 \n）。
+    func testCopyTextNoTrailingNewline() {
+        let mk: (String, CGFloat, Int) -> OCRLine = { text, y, base in
+            OCRLine(text: text, box: CGRect(x: 0.10, y: y, width: 0.20, height: 0.08),
+                    chars: text.enumerated().map { i, c in
+                        OCRChar(char: c, box: CGRect(x: 0.10 + 0.04 * Double(i), y: y,
+                                                     width: 0.03, height: 0.08),
+                                textIndex: base + i)
+                    })
+        }
+        let lines = [mk("TOP", 0.50, 0), mk("MID", 0.30, 0), mk("BOT", 0.10, 0)]
+        // 只选中第一行 TOP，其后还有未选中行
+        let sel = OCRCharSelection(refs: [OCRCharRef(line: 0, charIndex: 0),
+                                          OCRCharRef(line: 0, charIndex: 1),
+                                          OCRCharRef(line: 0, charIndex: 2)])
+        XCTAssertEqual(sel.copyText(lines: lines), "TOP")
+    }
+
+    /// 行间空格处（无任何字符框覆盖）必须回退到最近字符，否则鼠标按下去选不中、拖不动。
+    /// 旧测试的落点其实在 A 的 padding 框内，从没走到这个分支。
+    func testHitTestFallsBackWhenNoCharBoxCoversPoint() {
+        let chars: [OCRChar] = [
+            OCRChar(char: "A", box: CGRect(x: 0.10, y: 0.40, width: 0.10, height: 0.10), textIndex: 0),
+            OCRChar(char: "B", box: CGRect(x: 0.30, y: 0.40, width: 0.10, height: 0.10), textIndex: 1),
+        ]
+        let line = OCRLine(text: "AB", box: CGRect(x: 0.10, y: 0.40, width: 0.30, height: 0.10), chars: chars)
+        // 用 padding=0 关掉外扩，再取两框正中间（归一化 0.20 → 视图 130）——必然落空
+        let ref = OCRCharQuery.hit(lines: [line], host: host, point: NSPoint(x: 130, y: 190), padding: 0)
+        XCTAssertNotNil(ref, "行内空隙必须回退到最近字符")
+        // 应回退到更近的 A（中点 110 距 130 只差 20，B 中点 170 差 40）
+        XCTAssertEqual(ref?.charIndex, 0)
     }
 }

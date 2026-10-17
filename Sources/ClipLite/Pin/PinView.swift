@@ -127,6 +127,7 @@ final class PinView: NSView {
         ocrCharSel = OCRCharSelection()
         ocrShowText = false          // 默认隐藏叠字：原图优先，选中仍以强调色标出
         ocrMarquee = nil
+        OCRTextOverlay.resetFontCache()
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
@@ -139,6 +140,7 @@ final class PinView: NSView {
         ocrMarquee = nil
         ocrDragStart = nil
         ocrActive = false
+        OCRTextOverlay.resetFontCache()
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
@@ -212,6 +214,8 @@ final class PinView: NSView {
                         .map { OCRCharSelection(refs: [$0]) } ?? OCRCharSelection()
                 } else {
                     ocrSelected = [idx]
+                    // 绘制只认 ocrCharSel：退化路径也必须同步写字符集，否则选中了却没有高亮
+                    ocrCharSel = OCRCharSelection(refs: [OCRCharRef(line: idx, charIndex: 0)])
                 }
                 needsDisplay = true
                 return
@@ -247,6 +251,8 @@ final class PinView: NSView {
                 ocrCharSel = OCRCharQuery.select(lines: ocrLines, host: bounds, marquee: m)
             } else {
                 ocrSelected = OCRTextOverlay.selectedIndices(lines: ocrLines, host: bounds, marquee: m)
+                // 绘制只认 ocrCharSel：退化路径也必须同步写字符集，否则选中了却没有高亮
+                ocrCharSel = OCRCharSelection(refs: ocrSelected.map { OCRCharRef(line: $0, charIndex: 0) })
             }
             needsDisplay = true
             return

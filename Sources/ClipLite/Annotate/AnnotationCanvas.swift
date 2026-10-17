@@ -90,6 +90,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         ocrCharSel = OCRCharSelection()
         ocrShowText = false          // 默认隐藏叠字：原图优先，选中仍以强调色标出
         ocrMarquee = nil
+        OCRTextOverlay.resetFontCache()
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
         windowController?.ocrOverlayVisibilityChanged()
@@ -103,6 +104,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         ocrMarquee = nil
         ocrDragStart = nil
         ocrActive = false
+        OCRTextOverlay.resetFontCache()
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
         windowController?.ocrOverlayVisibilityChanged()
@@ -135,6 +137,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             ocrCharSel = OCRCharQuery.all(lines: ocrLines)
         } else {
             ocrSelected = Set(ocrLines.indices)
+            // 绘制只认 ocrCharSel：退化路径也必须同步写字符集，否则选中了却没有高亮
+            ocrCharSel = OCRCharSelection(refs: ocrSelected.map { OCRCharRef(line: $0, charIndex: 0) })
         }
         needsDisplay = true
     }
@@ -159,6 +163,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 ocrCharSel = OCRCharQuery.hit(lines: ocrLines, host: selection, point: p).map { OCRCharSelection(refs: [$0]) } ?? OCRCharSelection()
             } else {
                 ocrSelected = OCRTextOverlay.hitTest(lines: ocrLines, host: selection, point: p).map { Set([$0]) } ?? []
+                // 绘制只认 ocrCharSel：退化路径也必须同步写字符集，否则选中了却没有高亮
+                ocrCharSel = OCRCharSelection(refs: ocrSelected.map { OCRCharRef(line: $0, charIndex: 0) })
             }
             needsDisplay = true
             return
@@ -224,6 +230,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 ocrCharSel = OCRCharQuery.select(lines: ocrLines, host: selection, marquee: m)
             } else {
                 ocrSelected = OCRTextOverlay.selectedIndices(lines: ocrLines, host: selection, marquee: m)
+                // 绘制只认 ocrCharSel：退化路径也必须同步写字符集，否则选中了却没有高亮
+                ocrCharSel = OCRCharSelection(refs: ocrSelected.map { OCRCharRef(line: $0, charIndex: 0) })
             }
             needsDisplay = true
             return

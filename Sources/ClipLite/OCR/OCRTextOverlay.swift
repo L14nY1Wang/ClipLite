@@ -84,11 +84,13 @@ enum OCRTextOverlay {
                 let r = viewRect(line, in: host)
                 guard r.width > 0.5, r.height > 0.5, !line.text.isEmpty else { continue }
                 let lineSel = selected.contains(OCRCharRef(line: li, charIndex: 0))
-                (lineSel ? NSColor.controlAccentColor.withAlphaComponent(0.92)
-                         : NSColor.black.withAlphaComponent(0.45)).setFill()
-                NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5)).fill()
+                if lineSel || showText {
+                    (lineSel ? NSColor.controlAccentColor.withAlphaComponent(0.92)
+                             : NSColor.black.withAlphaComponent(0.45)).setFill()
+                    NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5)).fill()
+                }
                 if showText {
-                    let font = fittedFont(line.text, box: r)
+                    let font = NSFont.systemFont(ofSize: fittedFontSize(line.text, box: r))
                     let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
                     let size = (line.text as NSString).size(withAttributes: attrs)
                     let baseline = r.midY - (font.ascender - font.descender) / 2
@@ -100,12 +102,17 @@ enum OCRTextOverlay {
             for (ci, ch) in line.chars.enumerated() {
                 let r = viewRectForChar(ch, in: host)
                 guard r.width > 0.5, r.height > 0.5 else { continue }
-                let on = selected.contains(OCRCharRef(line: li, charIndex: ci))
-                (on ? NSColor.controlAccentColor.withAlphaComponent(0.92)
-                    : NSColor.black.withAlphaComponent(0.32)).setFill()
-                NSBezierPath(rect: r.insetBy(dx: 0.25, dy: 0.5)).fill()
+                // 底衬只为衬托白字而存在：隐藏叠字时只保留选中高亮，不铺黑，
+                // 否则原图被一层黑盖住，「只看原图」名不副实。
+                if selected.contains(OCRCharRef(line: li, charIndex: ci)) {
+                    NSColor.controlAccentColor.withAlphaComponent(0.92).setFill()
+                    NSBezierPath(rect: r.insetBy(dx: 0.25, dy: 0.5)).fill()
+                } else if showText {
+                    NSColor.black.withAlphaComponent(0.32).setFill()
+                    NSBezierPath(rect: r.insetBy(dx: 0.25, dy: 0.5)).fill()
+                }
                 if showText {
-                    let font = fittedFont(String(ch.char), box: r)
+                    let font = NSFont.systemFont(ofSize: fittedFontSize(String(ch.char), box: r))
                     let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
                     let size = (String(ch.char) as NSString).size(withAttributes: attrs)
                     let baseline = r.midY - (font.ascender - font.descender) / 2
@@ -126,9 +133,16 @@ enum OCRTextOverlay {
             withAttributes: attrs)
     }
 
+    /// 字号自适应缓存：键 = (字符, 框尺寸)。drawChars 每帧对每个字符调用一次，
+    /// 而 fittedFont 要做最多 40 次文本测量——千字级截图拖拽时每帧数千次测量会掉帧。
+    /// 按 (char, box) 缓存后同一字符只算一次（框尺寸相同则字号必然相同）。
+    private static var fontCache: [String: CGFloat] = [:]
+
     /// 字号自适应：以 10pt 起测，按「框面积/文字面积」开方缩放，再按高度/宽度收敛。
     /// （Umi-OCR resetFontSize 同思路；截图里框小字密时必须缩小才不溢出。）
-    private static func fittedFont(_ text: String, box: NSRect) -> NSFont {
+    private static func fittedFontSize(_ text: String, box: NSRect) -> CGFloat {
+        let key = "\(text)|\(box.width.rounded())|\(box.height.rounded())"
+        if let cached = fontCache[key] { return cached }
         let measure: (CGFloat) -> NSSize = { ps in
             (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: ps)])
         }
@@ -138,9 +152,15 @@ enum OCRTextOverlay {
             ps = 10 * ((box.width * box.height) / (s0.width * s0.height)).squareRoot()
         }
         ps = min(ps, box.height / 1.15)          // 高度优先：行高通常是硬约束
-        var guardCount = 0
-        while measure(ps).height > box.height, guardCount < 20 { ps -= 1; guardCount += 1 }
-        while measure(ps).width > box.width, guardCount < 40 { ps -= 1; guardCount += 1 }
-        return NSFont.systemFont(ofSize: max(3, ps))
+        var n = 0
+        while measure(ps).height > box.height, n < 20 { ps -= 1; n += 1 }
+        n = 0
+        while measure(ps).width > box.width, n < 20 { ps -= 1; n += 1 }
+        let out = max(3, ps)
+        fontCache[key] = out
+        return out
     }
+
+    /// 切换识别结果时清空字号缓存（字符/框尺寸全变，旧条目不再有用）。
+    static func resetFontCache() { fontCache.removeAll() }
 }

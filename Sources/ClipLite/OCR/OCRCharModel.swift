@@ -23,6 +23,9 @@ struct OCRLine {
 struct OCRChar {
     let char: Character
     let box: CGRect
+    /// 该字符在所属行 `text` 中的下标。空格没有坐标框、不会进 `chars`，
+    /// 复制时靠它从 `text` 切片，避免「Hello World」被拼成「HelloWorld」。
+    let textIndex: Int
 }
 
 extension OCRLine {
@@ -131,22 +134,33 @@ enum OCRCharQuery {
 }
 
 extension OCRCharSelection {
-    /// 按阅读顺序拼接待复制文本；indices 为空 = 全部（同 Umi-OCR 语义）。
-    /// 每个字符依次追加：行内按下标升序、跨行按行号升序，天然形成阅读顺序。
+    /// 按阅读顺序拼接待复制文本；无选中 = 全部（同 Umi-OCR 语义）。
+    /// 关键：从 `line.text` 按下标切片，而不是拼 `chars`——空格没有坐标框、
+    /// 不进 `chars`，直接拼会把 "Hello World" 变成 "HelloWorld"。
     func copyText(lines: [OCRLine]) -> String {
         let picked: Set<OCRCharRef> = isEmpty ? Set(OCRCharQuery.all(lines: lines).picked) : picked
+        var lastSelectedLine = -1
+        for (li, line) in lines.enumerated() where hasAny(line: li, line: line, picked: picked) {
+            lastSelectedLine = li
+        }
         var out = ""
         for (li, line) in lines.enumerated() {
-            for ci in line.chars.indices where picked.contains(OCRCharRef(line: li, charIndex: ci)) {
-                out.append(line.chars[ci].char)
-            }
-            // 行尾补换行：仅当该行确有选中且不是最后一行时，避免复制结果粘成一行
-            if line.chars.indices.contains(where: { picked.contains(OCRCharRef(line: li, charIndex: $0)) }),
-               li != lines.count - 1 {
-                out.append("\n")
-            }
+            let idx = line.chars.indices
+                .filter { picked.contains(OCRCharRef(line: li, charIndex: $0)) }
+                .map { line.chars[$0].textIndex }
+                .sorted()
+            guard !idx.isEmpty else { continue }
+            let s = line.text
+            let start = s.index(s.startIndex, offsetBy: idx.first!)
+            let end = s.index(s.startIndex, offsetBy: idx.last! + 1)
+            out += s[start..<end]
+            if li != lastSelectedLine { out.append("\n") }
         }
         return out
+    }
+
+    private func hasAny(line li: Int, line: OCRLine, picked: Set<OCRCharRef>) -> Bool {
+        line.chars.indices.contains { picked.contains(OCRCharRef(line: li, charIndex: $0)) }
     }
 
     func charCount(lines: [OCRLine]) -> Int {

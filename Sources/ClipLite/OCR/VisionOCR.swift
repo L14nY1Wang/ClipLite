@@ -79,14 +79,15 @@ enum VisionOCR {
         return try decodeJSON(outData)
     }
 
-    // MARK: - 子进程 JSON 协议（stdout：`[{"t": 文字, "b": [x,y,w,h], "c": [{"c": 字符, "b": [...]}, ...]}, ...]`，box 归一化）
+    // MARK: - 子进程 JSON 协议（stdout：`[{"t": 文字, "b": [x,y,w,h], "c": [{"c": 字符, "b": [...], "i": text下标}, ...]}, ...]`，box 归一化）
     static func encodeJSON(_ lines: [OCRLine]) throws -> Data {
         let payload: [[String: Any]] = lines.map { l in
             [
                 "t": l.text,
                 "b": [l.box.minX, l.box.minY, l.box.width, l.box.height],
                 "c": l.chars.map { ["c": String($0.char),
-                                    "b": [$0.box.minX, $0.box.minY, $0.box.width, $0.box.height]] },
+                                    "b": [$0.box.minX, $0.box.minY, $0.box.width, $0.box.height],
+                                    "i": $0.textIndex] },
             ]
         }
         return try JSONSerialization.data(withJSONObject: payload)
@@ -101,7 +102,9 @@ enum VisionOCR {
             let chars: [OCRChar] = ((d["c"] as? [[String: Any]]) ?? []).compactMap { cd in
                 guard let cs = cd["c"] as? String, cs.count == 1,
                       let cb = cd["b"] as? [CGFloat], cb.count == 4 else { return nil }
-                return OCRChar(char: cs.first!, box: CGRect(x: cb[0], y: cb[1], width: cb[2], height: cb[3]))
+                return OCRChar(char: cs.first!,
+                               box: CGRect(x: cb[0], y: cb[1], width: cb[2], height: cb[3]),
+                               textIndex: cd["i"] as? Int ?? 0)
             }
             return OCRLine(text: t, box: CGRect(x: b[0], y: b[1], width: b[2], height: b[3]), chars: chars)
         }
@@ -130,7 +133,8 @@ enum VisionOCR {
     /// 注意 accurate 模式下 `boundingBox(for:)` 对英文是**词级**精度（Apple 文档明示），
     /// 对中文是字符级；`fast` 模式才是真正字符级但识别质量差。取舍：accurate 为主识别，
     /// 中文逐字、英文逐词——中文截图场景（本项目主要用户）拿到完整逐字能力。
-    /// 空格没有框（返回 .zero），直接跳过，复制时按 text 拼接不丢字。
+    /// 空格没有框（返回 .zero）会被跳过，但它仍占 text 下标——复制时靠 textIndex
+    /// 从 text 切片把它带出来，所以拼回来不会丢空格。
     private static func charBoxes(of cand: VNRecognizedText) -> [OCRChar] {
         let s = cand.string
         var out: [OCRChar] = []
@@ -138,8 +142,9 @@ enum VisionOCR {
         var i = s.startIndex
         while i < s.endIndex {
             let n = s.index(after: i)
+            let textIndex = s.distance(from: s.startIndex, to: i)
             if let b = (try? cand.boundingBox(for: i..<n))?.boundingBox, b != .zero, b.width > 0 {
-                out.append(OCRChar(char: s[i], box: b))
+                out.append(OCRChar(char: s[i], box: b, textIndex: textIndex))
             }
             i = n
         }
